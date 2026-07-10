@@ -13,6 +13,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.content.Context;
 import android.text.InputType;
 import android.view.GestureDetector;
 import android.view.Gravity;
@@ -22,9 +23,12 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.GridLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.view.inputmethod.InputMethodManager;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -56,27 +60,39 @@ public final class MainActivity extends Activity {
 
     private EditText ipInput;
     private Button connectButton;
-    private Button mapModeButton;
+    private TextView connectionToggleButton;
+    private Button aimButton;
     private TextView connectionText;
     private ThorMapView mapView;
-    private LinearLayout bottomPanel;
+    private FrameLayout mapSlot;
+    private LinearLayout connectionControls;
+    private LinearLayout contentPanel;
+    private LinearLayout flightPanel;
     private AttitudeView attitudeView;
     private MetricTile aoaTile;
     private MetricTile aosTile;
     private MetricTile gTile;
-    private MetricTile speedTile;
-    private MetricTile altitudeTile;
-    private MetricTile machTile;
     private MetricTile throttleTile;
     private MetricTile verticalSpeedTile;
     private MetricTile thrustTile;
     private MetricTile engineTile;
     private MetricTile fuelTile;
     private MetricTile fuelFlowTile;
+    private MetricTile pitchTile;
+    private MetricTile rollTile;
+    private MetricTile nozzleTile;
+    private MetricTile flapsTile;
+    private MetricTile gearTile;
+    private MetricTile airbrakeTile;
 
     private ScheduledFuture<?> pollTask;
     private String currentBaseUrl = "";
+    private long nextIconLoadAttemptMs;
     private int currentMapGeneration = Integer.MIN_VALUE;
+    private Bitmap currentMapBitmap;
+    private boolean aircraftLayoutActive;
+    private boolean connectionControlsCollapsed;
+    private boolean connectionEverSucceeded;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -94,6 +110,7 @@ public final class MainActivity extends Activity {
             pollTask.cancel(true);
         }
         executor.shutdownNow();
+        RootInputBridge.shutdown();
         super.onDestroy();
     }
 
@@ -103,14 +120,40 @@ public final class MainActivity extends Activity {
         root.setBackgroundColor(Color.rgb(16, 20, 24));
         setContentView(root);
 
-        LinearLayout topBar = new LinearLayout(this);
-        topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setPadding(dp(10), dp(8), dp(10), dp(8));
-        topBar.setBackgroundColor(Color.rgb(20, 25, 30));
-        root.addView(topBar, new LinearLayout.LayoutParams(
+        HorizontalScrollView topScroll = new HorizontalScrollView(this);
+        topScroll.setHorizontalScrollBarEnabled(false);
+        topScroll.setFillViewport(false);
+        topScroll.setBackgroundColor(Color.rgb(20, 25, 30));
+        root.addView(topScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
+
+        LinearLayout topBar = new LinearLayout(this);
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
+        topBar.setPadding(dp(10), dp(8), dp(10), dp(8));
+        topScroll.addView(topBar, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
+
+        connectionToggleButton = new TextView(this);
+        connectionToggleButton.setText(">");
+        connectionToggleButton.setTextSize(18);
+        connectionToggleButton.setTextColor(Color.WHITE);
+        connectionToggleButton.setGravity(Gravity.CENTER);
+        connectionToggleButton.setPadding(0, 0, 0, dp(2));
+        connectionToggleButton.setOnClickListener(v -> setConnectionControlsCollapsed(!connectionControlsCollapsed));
+        topBar.addView(connectionToggleButton, new LinearLayout.LayoutParams(dp(34), dp(44)));
+
+        connectionControls = new LinearLayout(this);
+        connectionControls.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams controlsParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        controlsParams.setMargins(dp(6), 0, 0, 0);
+        topBar.addView(connectionControls, controlsParams);
 
         ipInput = new EditText(this);
         ipInput.setSingleLine(true);
@@ -121,7 +164,7 @@ public final class MainActivity extends Activity {
         ipInput.setTextSize(16);
         ipInput.setSelectAllOnFocus(true);
         ipInput.setPadding(dp(10), 0, dp(10), 0);
-        topBar.addView(ipInput, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        connectionControls.addView(ipInput, new LinearLayout.LayoutParams(dp(220), dp(44)));
 
         connectButton = new Button(this);
         connectButton.setText("连接");
@@ -130,20 +173,7 @@ public final class MainActivity extends Activity {
         connectButton.setOnClickListener(v -> startConnection(ipInput.getText().toString()));
         LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(dp(92), dp(44));
         buttonParams.setMargins(dp(8), 0, 0, 0);
-        topBar.addView(connectButton, buttonParams);
-
-        mapModeButton = new Button(this);
-        mapModeButton.setText("全图");
-        mapModeButton.setTextSize(13);
-        mapModeButton.setAllCaps(false);
-        mapModeButton.setVisibility(View.GONE);
-        mapModeButton.setOnClickListener(v -> {
-            mapView.setLocalMapMode(!mapView.isLocalMapMode());
-            updateMapModeButton();
-        });
-        LinearLayout.LayoutParams mapButtonParams = new LinearLayout.LayoutParams(dp(76), dp(44));
-        mapButtonParams.setMargins(dp(8), 0, 0, 0);
-        topBar.addView(mapModeButton, mapButtonParams);
+        connectionControls.addView(connectButton, buttonParams);
 
         connectionText = new TextView(this);
         connectionText.setText("未连接");
@@ -154,55 +184,83 @@ public final class MainActivity extends Activity {
         statusParams.setMargins(dp(8), 0, 0, 0);
         topBar.addView(connectionText, statusParams);
 
-        mapView = new ThorMapView(this);
-        root.addView(mapView, new LinearLayout.LayoutParams(
+        aimButton = new Button(this);
+        aimButton.setText("\u7784\u51c6");
+        aimButton.setTextSize(15);
+        aimButton.setAllCaps(false);
+        aimButton.setOnClickListener(v -> toggleAimMode());
+        LinearLayout.LayoutParams aimParams = new LinearLayout.LayoutParams(dp(92), dp(44));
+        aimParams.setMargins(dp(8), 0, 0, 0);
+        topBar.addView(aimButton, aimParams);
+
+        contentPanel = new LinearLayout(this);
+        contentPanel.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(contentPanel, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
                 1f
         ));
 
-        bottomPanel = new LinearLayout(this);
-        bottomPanel.setOrientation(LinearLayout.HORIZONTAL);
-        bottomPanel.setPadding(dp(8), dp(8), dp(8), dp(8));
-        bottomPanel.setBackgroundColor(Color.rgb(16, 20, 24));
-        root.addView(bottomPanel, new LinearLayout.LayoutParams(
+        mapSlot = new FrameLayout(this);
+        contentPanel.addView(mapSlot, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+
+        mapView = new ThorMapView(this);
+        mapSlot.addView(mapView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+
+        flightPanel = new LinearLayout(this);
+        flightPanel.setOrientation(LinearLayout.VERTICAL);
+        flightPanel.setPadding(dp(8), dp(8), dp(8), dp(8));
+        flightPanel.setBackgroundColor(Color.rgb(16, 20, 24));
+        flightPanel.setVisibility(View.GONE);
+        contentPanel.addView(flightPanel, new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0.85f
         ));
 
         attitudeView = new AttitudeView(this);
-        LinearLayout.LayoutParams attitudeParams = new LinearLayout.LayoutParams(dp(136), dp(156));
-        attitudeParams.setMargins(0, 0, dp(8), 0);
-        bottomPanel.addView(attitudeView, attitudeParams);
+        flightPanel.addView(attitudeView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(105)
+        ));
 
         GridLayout metrics = new GridLayout(this);
-        metrics.setColumnCount(4);
+        metrics.setColumnCount(3);
         metrics.setBackgroundColor(Color.rgb(16, 20, 24));
-        bottomPanel.addView(metrics, new LinearLayout.LayoutParams(
+        flightPanel.addView(metrics, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
-                dp(156),
                 1f
         ));
 
         aoaTile = addTile(metrics, "迎角");
         aosTile = addTile(metrics, "侧滑");
         gTile = addTile(metrics, "过载");
-        speedTile = addTile(metrics, "速度");
-        altitudeTile = addTile(metrics, "高度");
-        machTile = addTile(metrics, "马赫");
         throttleTile = addTile(metrics, "油门");
         verticalSpeedTile = addTile(metrics, "垂速");
         thrustTile = addTile(metrics, "推力");
         engineTile = addTile(metrics, "发动机");
         fuelTile = addTile(metrics, "燃油");
         fuelFlowTile = addTile(metrics, "油耗");
+        pitchTile = addTile(metrics, "俯仰");
+        rollTile = addTile(metrics, "横滚");
+        nozzleTile = addTile(metrics, "喷口");
+        flapsTile = addTile(metrics, "襟翼");
+        gearTile = addTile(metrics, "起落架");
+        airbrakeTile = addTile(metrics, "减速板");
     }
 
     private MetricTile addTile(GridLayout parent, String label) {
         MetricTile tile = new MetricTile(this, label);
         GridLayout.LayoutParams params = new GridLayout.LayoutParams();
         params.width = 0;
-        params.height = dp(52);
+        params.height = dp(50);
         params.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
         params.setMargins(dp(4), dp(2), dp(4), dp(2));
         parent.addView(tile, params);
@@ -220,45 +278,73 @@ public final class MainActivity extends Activity {
         }
         currentBaseUrl = baseUrl;
         currentMapGeneration = Integer.MIN_VALUE;
+        currentMapBitmap = null;
         connectionText.setText("连接中");
         connectButton.setEnabled(false);
         mapView.resetView();
 
         pollTask = executor.scheduleWithFixedDelay(() -> pollOnce(baseUrl), 0, POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
-        updateMapModeButton();
+    }
+
+    private void setConnectionControlsCollapsed(boolean collapsed) {
+        connectionControlsCollapsed = collapsed;
+        if (connectionControls != null) {
+            connectionControls.setVisibility(collapsed ? View.GONE : View.VISIBLE);
+        }
+    }
+
+    private void toggleAimMode() {
+        hideSoftKeyboard();
+        RootInputBridge.sendKeyZ();
+    }
+
+    private void hideSoftKeyboard() {
+        ipInput.clearFocus();
+        View decorView = getWindow().getDecorView();
+        decorView.requestFocus();
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.hideSoftInputFromWindow(decorView.getWindowToken(), 0);
+        }
     }
 
     private void pollOnce(String baseUrl) {
         try {
             ensureIcons(baseUrl);
 
-            JSONObject mapInfo = fetchJsonObject(baseUrl + "/map_info.json");
-            if (mapInfo.has("map_generation")) {
-                int mapGeneration = mapInfo.optInt("map_generation", Integer.MIN_VALUE);
-                if (mapGeneration != currentMapGeneration || mapView.getMapBitmap() == null) {
-                    Bitmap map = fetchBitmap(baseUrl + "/map.img?gen=" + mapGeneration);
-                    currentMapGeneration = mapGeneration;
-                    mainHandler.post(() -> mapView.setMapBitmap(map));
-                }
-            } else if (mapView.getMapBitmap() == null) {
-                Bitmap map = fetchBitmap(baseUrl + "/map.img");
-                mainHandler.post(() -> mapView.setMapBitmap(map));
-            }
-            if (mapInfo.has("map_min") && mapInfo.has("map_max")) {
-                mainHandler.post(() -> mapView.setMapInfo(mapInfo));
-            }
-
-            JSONArray objects = fetchJsonArray(baseUrl + "/map_obj.json");
-            List<MapObject> parsedObjects = MapObject.fromArray(objects);
-            mainHandler.post(() -> mapView.setObjects(parsedObjects));
-
             JSONObject state = fetchJsonObject(baseUrl + "/state");
             JSONObject indicators = fetchJsonObject(baseUrl + "/indicators");
             FlightStatus status = FlightStatus.from(state, indicators);
+
+            JSONObject mapInfo = fetchJsonObject(baseUrl + "/map_info.json");
+            int mapGeneration = mapInfo.optInt("map_generation", Integer.MIN_VALUE);
+            boolean mapChanged = false;
+            if (mapInfo.has("map_generation")) {
+                if (currentMapBitmap == null || mapGeneration != currentMapGeneration) {
+                    Bitmap map = fetchBitmap(baseUrl + "/map.img?gen=" + mapGeneration);
+                    currentMapBitmap = map;
+                    currentMapGeneration = mapGeneration;
+                    mapChanged = true;
+                }
+            } else if (currentMapBitmap == null) {
+                Bitmap map = fetchBitmap(baseUrl + "/map.img");
+                currentMapBitmap = map;
+                mapChanged = true;
+            }
+
+            JSONArray objects = fetchJsonArray(baseUrl + "/map_obj.json");
+            List<MapObject> parsedObjects = MapObject.collapseNearbyRespawns(MapObject.fromArray(objects));
+            Bitmap bitmapForDisplay = currentMapBitmap;
+            boolean resetViewport = mapChanged;
             mainHandler.post(() -> {
+                mapView.setMapData(bitmapForDisplay, mapInfo, parsedObjects, resetViewport);
                 renderStatus(status);
                 connectionText.setText("已连接 " + shortTime());
                 connectButton.setEnabled(true);
+                if (!connectionEverSucceeded) {
+                    connectionEverSucceeded = true;
+                    setConnectionControlsCollapsed(true);
+                }
             });
         } catch (Exception e) {
             mainHandler.post(() -> {
@@ -272,40 +358,47 @@ public final class MainActivity extends Activity {
         if (mapView.hasIconTypeface()) {
             return;
         }
+        long now = SystemClock.elapsedRealtime();
+        if (now < nextIconLoadAttemptMs) {
+            return;
+        }
+        nextIconLoadAttemptMs = now + 5000L;
+
+        File fontFile = new File(getCacheDir(), "wt-icons.ttf");
         try {
+            if (fontFile.isFile() && fontFile.length() > 0) {
+                Typeface cachedTypeface = Typeface.createFromFile(fontFile);
+                mainHandler.post(() -> mapView.setIconTypeface(cachedTypeface));
+                return;
+            }
+
             byte[] data = fetchBytes(baseUrl + "/icons.ttf");
-            File fontFile = new File(getCacheDir(), "wt-icons.ttf");
-            FileOutputStream out = new FileOutputStream(fontFile);
+            File tempFile = new File(getCacheDir(), "wt-icons.tmp");
+            FileOutputStream out = new FileOutputStream(tempFile);
             out.write(data);
             out.close();
+            if (fontFile.exists() && !fontFile.delete()) {
+                throw new IllegalStateException("无法替换图标字体缓存");
+            }
+            if (!tempFile.renameTo(fontFile)) {
+                throw new IllegalStateException("无法保存图标字体缓存");
+            }
             Typeface typeface = Typeface.createFromFile(fontFile);
             mainHandler.post(() -> mapView.setIconTypeface(typeface));
         } catch (Exception ignored) {
-            mainHandler.post(() -> mapView.setIconTypeface(Typeface.DEFAULT_BOLD));
+            // Keep the icon typeface unset so a temporary network/font failure can retry.
         }
     }
 
     private void renderStatus(FlightStatus status) {
-        mapModeButton.setVisibility(View.VISIBLE);
-        updateMapModeButton();
+        setAircraftLayout(status.isAircraft);
         if (!status.isAircraft) {
-            bottomPanel.setVisibility(View.GONE);
             return;
         }
-        bottomPanel.setVisibility(View.VISIBLE);
         attitudeView.setAttitude(status);
         aoaTile.setValues(status.hasAoa ? format(status.aoa, 1) + " deg" : "--", "");
         aosTile.setValues(status.hasAos ? format(status.aos, 1) + " deg" : "--", "");
         gTile.setValues(status.hasNy ? format(status.ny, 2) + " G" : "--", "");
-        if (status.hasTas || status.hasIas) {
-            String main = status.hasIas ? format(status.iasKmh, 0) + " IAS" : format(status.tasKmh, 0) + " TAS";
-            String sub = status.hasTas && status.hasIas ? format(status.tasKmh, 0) + " TAS" : "";
-            speedTile.setValues(main, sub);
-        } else {
-            speedTile.setValues("--", "");
-        }
-        altitudeTile.setValues(status.hasAltitude ? format(status.altitudeM, 0) + " m" : "--", "");
-        machTile.setValues(status.hasMach ? "M " + format(status.mach, 2) : "--", "");
         String throttleSub = status.hasWepTime ? "WEP " + formatSeconds(status.wepSeconds) : "WEP --";
         throttleTile.setValues(status.hasThrottle ? format(status.throttlePercent, 0) + "%" : "--", throttleSub);
         verticalSpeedTile.setValues(status.hasVerticalSpeed ? signed(status.verticalSpeed, 1) + " m/s" : "--", "");
@@ -339,13 +432,39 @@ public final class MainActivity extends Activity {
             fuelFlowTile.setValues("--", "");
         }
 
+        pitchTile.setValues(status.hasPitch ? signed(status.pitchDeg, 1) + " deg" : "--", "");
+        rollTile.setValues(status.hasRoll ? signed(status.rollDeg, 0) + " deg" : "--", "");
+        nozzleTile.setValues(status.hasNozzleAngle ? format(status.nozzleAngle, 0) + " deg" : "--", "");
+        flapsTile.setValues(status.hasFlaps ? format(status.flapsPercent, 0) + "%" : "--", "");
+        gearTile.setValues(status.hasGear ? format(status.gearPercent, 0) + "%" : "--", "");
+        airbrakeTile.setValues(status.hasAirbrake ? format(status.airbrakePercent, 0) + "%" : "--", "");
+
     }
 
-    private void updateMapModeButton() {
-        if (mapModeButton == null) {
+    private void setAircraftLayout(boolean isAircraft) {
+        if (aircraftLayoutActive == isAircraft) {
             return;
         }
-        mapModeButton.setText(mapView.isLocalMapMode() ? "局部" : "全图");
+        aircraftLayoutActive = isAircraft;
+        applyContentLayout();
+    }
+
+    private void applyContentLayout() {
+        LinearLayout.LayoutParams mapParams = (LinearLayout.LayoutParams) mapSlot.getLayoutParams();
+        if (aircraftLayoutActive) {
+            flightPanel.setVisibility(View.VISIBLE);
+            mapParams.width = 0;
+            mapParams.height = ViewGroup.LayoutParams.MATCH_PARENT;
+            mapParams.weight = 1.15f;
+            mapView.setAlignMapTopLeft(true);
+        } else {
+            flightPanel.setVisibility(View.GONE);
+            mapParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
+            mapParams.height = ViewGroup.LayoutParams.MATCH_PARENT;
+            mapParams.weight = 0.0f;
+            mapView.setAlignMapTopLeft(false);
+        }
+        mapSlot.setLayoutParams(mapParams);
     }
 
     private static String buildBaseUrl(String rawInput) {

@@ -34,6 +34,10 @@ final class MapObject {
                 || "Truck".equals(icon);
     }
 
+    boolean isRespawnMarker() {
+        return type.startsWith("respawn_base_") && hasPoint;
+    }
+
     static List<MapObject> fromArray(JSONArray array) {
         ArrayList<MapObject> objects = new ArrayList<>();
         if (array == null) {
@@ -65,6 +69,49 @@ final class MapObject {
             objects.add(object);
         }
         return objects;
+    }
+
+    static List<MapObject> collapseNearbyRespawns(List<MapObject> objects) {
+        final float mergeDistance = 0.055f;
+        boolean[] visited = new boolean[objects.size()];
+        boolean[] keep = new boolean[objects.size()];
+        ArrayList<Integer> queue = new ArrayList<>();
+
+        for (int i = 0; i < objects.size(); i++) {
+            MapObject start = objects.get(i);
+            if (visited[i] || !start.isRespawnMarker()) {
+                continue;
+            }
+
+            visited[i] = true;
+            keep[i] = true;
+            queue.clear();
+            queue.add(i);
+            for (int cursor = 0; cursor < queue.size(); cursor++) {
+                MapObject source = objects.get(queue.get(cursor));
+                for (int j = 0; j < objects.size(); j++) {
+                    MapObject candidate = objects.get(j);
+                    if (visited[j] || !candidate.isRespawnMarker()) {
+                        continue;
+                    }
+                    float dx = source.x - candidate.x;
+                    float dy = source.y - candidate.y;
+                    if (dx * dx + dy * dy <= mergeDistance * mergeDistance) {
+                        visited[j] = true;
+                        queue.add(j);
+                    }
+                }
+            }
+        }
+
+        ArrayList<MapObject> collapsed = new ArrayList<>();
+        for (int i = 0; i < objects.size(); i++) {
+            MapObject object = objects.get(i);
+            if (!object.isRespawnMarker() || keep[i]) {
+                collapsed.add(object);
+            }
+        }
+        return collapsed;
     }
 
     private static int[] readColorArray(JSONArray array) {

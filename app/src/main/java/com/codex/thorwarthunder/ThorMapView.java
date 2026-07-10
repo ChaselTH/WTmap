@@ -30,15 +30,16 @@ final class ThorMapView extends View {
     private final Paint playerFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint playerStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint groundFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint groundStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint symbolPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path playerPath = new Path();
+    private final Path symbolPath = new Path();
     private final RectF groundRect = new RectF();
 
     private final ScaleGestureDetector scaleDetector;
     private final GestureDetector gestureDetector;
 
     private Bitmap mapBitmap;
-    private Typeface iconTypeface;
+    private volatile Typeface iconTypeface;
     private List<MapObject> objects = new ArrayList<>();
     private JSONObject mapInfo;
 
@@ -49,7 +50,7 @@ final class ThorMapView extends View {
     private float baseTop = 0.0f;
     private float baseWidth = 1.0f;
     private float baseHeight = 1.0f;
-    private boolean localMapMode = false;
+    private boolean alignMapTopLeft;
 
     ThorMapView(Context context) {
         super(context);
@@ -88,10 +89,8 @@ final class ThorMapView extends View {
 
         groundFillPaint.setStyle(Paint.Style.FILL);
 
-        groundStrokePaint.setColor(Color.rgb(20, 22, 24));
-        groundStrokePaint.setStyle(Paint.Style.STROKE);
-        groundStrokePaint.setStrokeWidth(dp(2));
-        groundStrokePaint.setStrokeJoin(Paint.Join.ROUND);
+        symbolPaint.setStrokeCap(Paint.Cap.ROUND);
+        symbolPaint.setStrokeJoin(Paint.Join.ROUND);
 
         scaleDetector = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
             @Override
@@ -162,22 +161,26 @@ final class ThorMapView extends View {
         invalidate();
     }
 
-    void setMapBitmap(Bitmap bitmap) {
+    void setMapData(Bitmap bitmap, JSONObject info, List<MapObject> nextObjects, boolean resetViewport) {
         mapBitmap = bitmap;
+        mapInfo = info;
+        objects = nextObjects == null ? new ArrayList<>() : nextObjects;
+        if (resetViewport) {
+            userScale = 1.0f;
+            panX = 0.0f;
+            panY = 0.0f;
+        }
         requestLayout();
         invalidate();
     }
 
-    void setObjects(List<MapObject> nextObjects) {
-        objects = nextObjects == null ? new ArrayList<>() : nextObjects;
-        if (localMapMode) {
-            centerLocalMapOnPlayer();
+    void setAlignMapTopLeft(boolean enabled) {
+        if (alignMapTopLeft == enabled) {
+            return;
         }
-        invalidate();
-    }
-
-    void setMapInfo(JSONObject info) {
-        mapInfo = info;
+        alignMapTopLeft = enabled;
+        updateBaseBounds();
+        clampPan();
         invalidate();
     }
 
@@ -188,24 +191,6 @@ final class ThorMapView extends View {
         objects = new ArrayList<>();
         mapInfo = null;
         mapBitmap = null;
-        invalidate();
-    }
-
-    boolean isLocalMapMode() {
-        return localMapMode;
-    }
-
-    void setLocalMapMode(boolean enabled) {
-        localMapMode = enabled;
-        if (enabled) {
-            userScale = Math.max(userScale, 3.0f);
-            centerLocalMapOnPlayer();
-        } else {
-            userScale = 1.0f;
-            panX = 0.0f;
-            panY = 0.0f;
-            clampPan();
-        }
         invalidate();
     }
 
@@ -227,9 +212,6 @@ final class ThorMapView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         updateBaseBounds();
-        if (localMapMode) {
-            centerLocalMapOnPlayer();
-        }
 
         RectF content = contentRect();
         if (mapBitmap != null) {
@@ -245,7 +227,7 @@ final class ThorMapView extends View {
         MapObject player = null;
         boolean hasBlink = false;
         for (MapObject object : objects) {
-            if (object.blink != 0) {
+            if (object.blink != 0 || "point_of_interest".equals(object.icon)) {
                 hasBlink = true;
             }
             if ("airfield".equals(object.type) && object.hasLine) {
@@ -272,8 +254,8 @@ final class ThorMapView extends View {
         float fitScale = Math.min(viewWidth / (float) bitmapWidth, viewHeight / (float) bitmapHeight);
         baseWidth = bitmapWidth * fitScale;
         baseHeight = bitmapHeight * fitScale;
-        baseLeft = (viewWidth - baseWidth) * 0.5f;
-        baseTop = (viewHeight - baseHeight) * 0.5f;
+        baseLeft = alignMapTopLeft ? 0.0f : (viewWidth - baseWidth) * 0.5f;
+        baseTop = alignMapTopLeft ? 0.0f : (viewHeight - baseHeight) * 0.5f;
     }
 
     private RectF contentRect() {
@@ -289,7 +271,7 @@ final class ThorMapView extends View {
         float height = baseHeight * userScale;
 
         if (width <= viewWidth) {
-            panX = (viewWidth - width) * 0.5f - baseLeft;
+            panX = alignMapTopLeft ? 0.0f : (viewWidth - width) * 0.5f - baseLeft;
         } else {
             float minPan = viewWidth - width - baseLeft;
             float maxPan = -baseLeft;
@@ -297,36 +279,12 @@ final class ThorMapView extends View {
         }
 
         if (height <= viewHeight) {
-            panY = (viewHeight - height) * 0.5f - baseTop;
+            panY = alignMapTopLeft ? 0.0f : (viewHeight - height) * 0.5f - baseTop;
         } else {
             float minPan = viewHeight - height - baseTop;
             float maxPan = -baseTop;
             panY = clamp(panY, minPan, maxPan);
         }
-    }
-
-    private void centerLocalMapOnPlayer() {
-        updateBaseBounds();
-        MapObject player = findPlayer();
-        if (player == null || !player.hasPoint) {
-            clampPan();
-            return;
-        }
-        userScale = clamp(userScale, 2.0f, 8.0f);
-        float width = baseWidth * userScale;
-        float height = baseHeight * userScale;
-        panX = getWidth() * 0.5f - baseLeft - player.x * width;
-        panY = getHeight() * 0.5f - baseTop - player.y * height;
-        clampPan();
-    }
-
-    private MapObject findPlayer() {
-        for (MapObject object : objects) {
-            if ("Player".equals(object.icon)) {
-                return object;
-            }
-        }
-        return null;
     }
 
     private void drawGrid(Canvas canvas, RectF content) {
@@ -382,10 +340,26 @@ final class ThorMapView extends View {
             drawGroundUnit(canvas, object, x, y);
             return;
         }
+        if ("aircraft".equals(object.type)) {
+            drawAircraftIcon(canvas, object, x, y);
+            return;
+        }
+        if ("respawn_base_ucav".equals(object.type) || "respawn_base_ucav".equals(object.icon)) {
+            drawAircraftIcon(canvas, object, x, y);
+            return;
+        }
+        if ("bombing_point".equals(object.icon)) {
+            drawBombingPointIcon(canvas, object, x, y);
+            return;
+        }
+        if ("point_of_interest".equals(object.icon)) {
+            drawFireControlIcon(canvas, x, y);
+            return;
+        }
 
         String glyph = glyphFor(object.icon);
         textFillPaint.setColor(resolveColor(object));
-        float textSize = dp(24);
+        float textSize = dp(18);
         textFillPaint.setTextSize(textSize);
         textStrokePaint.setTextSize(textSize);
 
@@ -405,13 +379,73 @@ final class ThorMapView extends View {
     }
 
     private void drawGroundUnit(Canvas canvas, MapObject object, float x, float y) {
-        float width = dp(10);
-        float height = dp(5);
+        float width = dp(8);
+        float height = dp(4);
         groundRect.set(x - width * 0.5f, y - height * 0.5f, x + width * 0.5f, y + height * 0.5f);
         groundFillPaint.setColor(resolveColor(object));
         float radius = dp(1);
         canvas.drawRoundRect(groundRect, radius, radius, groundFillPaint);
-        canvas.drawRoundRect(groundRect, radius, radius, groundStrokePaint);
+    }
+
+    private void drawAircraftIcon(Canvas canvas, MapObject object, float x, float y) {
+        float unit = dp(1);
+        symbolPath.reset();
+        symbolPath.moveTo(0, -7 * unit);
+        symbolPath.lineTo(2 * unit, -1 * unit);
+        symbolPath.lineTo(7 * unit, 1 * unit);
+        symbolPath.lineTo(7 * unit, 3 * unit);
+        symbolPath.lineTo(2 * unit, 2 * unit);
+        symbolPath.lineTo(2 * unit, 6 * unit);
+        symbolPath.lineTo(0, 5 * unit);
+        symbolPath.lineTo(-2 * unit, 6 * unit);
+        symbolPath.lineTo(-2 * unit, 2 * unit);
+        symbolPath.lineTo(-7 * unit, 3 * unit);
+        symbolPath.lineTo(-7 * unit, 1 * unit);
+        symbolPath.lineTo(-2 * unit, -1 * unit);
+        symbolPath.close();
+
+        symbolPaint.setStyle(Paint.Style.FILL);
+        symbolPaint.setColor(resolveColor(object));
+        float heading = (float) Math.toDegrees(Math.atan2(object.dx, -object.dy));
+        canvas.save();
+        canvas.translate(x, y);
+        canvas.rotate(heading);
+        canvas.drawPath(symbolPath, symbolPaint);
+        canvas.restore();
+    }
+
+    private void drawBombingPointIcon(Canvas canvas, MapObject object, float x, float y) {
+        float radius = dp(6);
+        symbolPaint.setColor(resolveColor(object));
+        symbolPaint.setStyle(Paint.Style.STROKE);
+        symbolPaint.setStrokeWidth(Math.max(1.0f, dp(1.5f)));
+        canvas.drawCircle(x, y, radius, symbolPaint);
+        canvas.drawCircle(x, y, radius * 0.45f, symbolPaint);
+        canvas.drawLine(x - radius - dp(2), y, x - radius * 0.55f, y, symbolPaint);
+        canvas.drawLine(x + radius * 0.55f, y, x + radius + dp(2), y, symbolPaint);
+        canvas.drawLine(x, y - radius - dp(2), x, y - radius * 0.55f, symbolPaint);
+        canvas.drawLine(x, y + radius * 0.55f, x, y + radius + dp(2), symbolPaint);
+    }
+
+    private void drawFireControlIcon(Canvas canvas, float x, float y) {
+        if ((SystemClock.uptimeMillis() / 350L) % 2L != 0L) {
+            return;
+        }
+
+        float halfSize = dp(7);
+        float cornerLength = dp(3);
+        symbolPaint.setColor(Color.rgb(255, 48, 48));
+        symbolPaint.setStyle(Paint.Style.STROKE);
+        symbolPaint.setStrokeWidth(Math.max(1.0f, dp(1.5f)));
+
+        canvas.drawLine(x - halfSize, y - halfSize, x - halfSize + cornerLength, y - halfSize, symbolPaint);
+        canvas.drawLine(x - halfSize, y - halfSize, x - halfSize, y - halfSize + cornerLength, symbolPaint);
+        canvas.drawLine(x + halfSize - cornerLength, y - halfSize, x + halfSize, y - halfSize, symbolPaint);
+        canvas.drawLine(x + halfSize, y - halfSize, x + halfSize, y - halfSize + cornerLength, symbolPaint);
+        canvas.drawLine(x - halfSize, y + halfSize - cornerLength, x - halfSize, y + halfSize, symbolPaint);
+        canvas.drawLine(x - halfSize, y + halfSize, x - halfSize + cornerLength, y + halfSize, symbolPaint);
+        canvas.drawLine(x + halfSize, y + halfSize - cornerLength, x + halfSize, y + halfSize, symbolPaint);
+        canvas.drawLine(x + halfSize - cornerLength, y + halfSize, x + halfSize, y + halfSize, symbolPaint);
     }
 
     private void drawPlayer(Canvas canvas, RectF content, MapObject object) {
