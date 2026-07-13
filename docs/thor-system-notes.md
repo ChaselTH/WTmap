@@ -61,6 +61,15 @@ adb shell su -c 'CLASSPATH=/data/local/tmp/surface-display-restore.dex app_proce
 
 After restoring, force-stop any old WTmap build that still contains mirror code before relaunching.
 
+Current safe mirror direction used by WTmap:
+
+- Do not modify the lower physical display's `layerStack`.
+- Keep WTmap running on logical display `4`.
+- Keep the top WTmap control bar as normal app UI on the lower screen.
+- Only the content area below the top bar becomes the upper-screen mirror.
+- The current implementation uses a root-side `MirrorRootService` and an in-app `TextureView`, so the mirror is inside WTmap's own window instead of replacing the whole lower display.
+- Lower-screen touch events inside the mirrored content area are translated and injected into upper logical display `0`.
+
 Better future directions:
 
 1. Find and call a safe AYN DualScreenAssistant interface, if one exists.
@@ -126,9 +135,29 @@ Git may not be on PATH in PowerShell; this path worked on the development PC:
   - upper screen: War Thunder
   - lower screen: WTmap reference map
 - Current safe `瞄准` behavior:
-  - sends keyboard `Z` to upper display via root `input`;
-  - does not take over or mirror the lower physical display.
+  - sends the configured keyboard key, default `Z`;
+  - toggles WTmap's in-window upper-display mirror below the fixed top bar;
+  - does not take over or mirror the whole lower physical display.
 - Root input can trigger Magisk grant toasts depending on Magisk settings. Avoid adding more root calls on every frame/touch.
+- Thor's physical input device `/dev/input/event6` declares only some keyboard keys. In one observed state it had keys such as `W/E/U/O/S/L/Z/C/V/M/arrow keys`, but not `G`.
+- For mapped buttons:
+  - WTmap first searches `/dev/input/event6` and then `/dev/input/event*` for the real Linux key label.
+  - If a device declares the key, WTmap sends EV_KEY with `sendevent`.
+  - If the key is missing, WTmap falls back to Android's system `/system/bin/uinput` helper and creates a short-lived virtual keyboard. This is needed for mappings such as 起落架=`G`.
+- `/system/bin/uinput` is a shell wrapper around `/system/framework/uinput.jar` and accepts newline-separated JSON commands: `register`, `delay`, and `inject`.
+
+## UI / button mapping notes
+
+- The top IP input and connect button collapse after connection. The small left `>` control expands them again.
+- Top action buttons are inside a collapsible menu labelled `按钮>` / `按钮<`; keep this menu so the first row does not become unusably crowded.
+- Settings is a full page, not an `AlertDialog`.
+- Settings page layout:
+  - top-left back button saves and returns;
+  - top-right `新增` and `删除`;
+  - table with two editable columns: button name and mapped key.
+- Button names are user-editable and must sync back to the top action buttons after returning from settings.
+- `瞄准` is special because it toggles mirror mode; do not delete it unless a replacement mirror entry exists.
+- Custom buttons are normal key-sending actions.
 
 ## Icon / map rendering decisions already made
 

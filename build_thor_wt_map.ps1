@@ -150,7 +150,7 @@ Invoke-Native 'aapt2 link' { & $Aapt2 link `
     --manifest (Join-Path $Root 'app\src\main\AndroidManifest.xml') `
     --java $Gen `
     --min-sdk-version 23 `
-    --target-sdk-version 35 `
+    --target-sdk-version 26 `
     --version-code 1 `
     --version-name 0.1 `
     --debug-mode `

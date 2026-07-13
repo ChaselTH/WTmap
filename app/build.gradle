@@ -9,7 +9,10 @@ android {
     defaultConfig {
         applicationId 'com.codex.thorwarthunder'
         minSdk 23
-        targetSdk 35
+        // Thor's system Surface mirror path uses hidden SurfaceControl.Transaction display APIs.
+        // These are blocked for newer target SDKs ("max-target-o" in logcat), so keep this
+        // utility app on Android O target while compiling with the current SDK.
+        targetSdk 26
         versionCode 1
         versionName '0.1'
     }
