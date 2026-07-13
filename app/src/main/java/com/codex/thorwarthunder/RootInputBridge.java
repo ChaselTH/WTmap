@@ -58,7 +58,7 @@ final class RootInputBridge {
                 "  sleep 0.06; " +
                 "  sendevent \"$DEV\" 1 " + linuxCode + " 0; sendevent \"$DEV\" 0 0 0; " +
                 "else " +
-                uinputKeyCommand(linuxLabel, androidCode) +
+                uinputKeyCommand(linuxCode, androidCode) +
                 "fi";
         runAsync(command, "send " + normalizedKey + " hardware");
     }
@@ -323,22 +323,41 @@ final class RootInputBridge {
         }
     }
 
-    private static String uinputKeyCommand(String linuxLabel, int androidCode) {
-        String file = "/data/local/tmp/wtmap_uinput_key_$$.json";
-        String json = "{\"id\":1,\"command\":\"register\",\"name\":\"WTmap Virtual Keyboard\","
-                + "\"vid\":6354,\"pid\":11330,\"bus\":\"usb\","
-                + "\"configuration\":[{\"type\":\"UI_SET_EVBIT\",\"data\":[\"EV_KEY\"]},"
-                + "{\"type\":\"UI_SET_KEYBIT\",\"data\":[\"" + linuxLabel + "\"]}]}\n"
-                + "{\"id\":1,\"command\":\"delay\",\"duration\":220}\n"
-                + "{\"id\":1,\"command\":\"inject\",\"events\":[\"EV_KEY\",\"" + linuxLabel + "\",1,"
-                + "\"EV_SYN\",\"SYN_REPORT\",0,"
-                + "\"EV_KEY\",\"" + linuxLabel + "\",0,"
-                + "\"EV_SYN\",\"SYN_REPORT\",0]}\n";
-        return "  printf '%s' " + shQuote(json) + " > " + file + "; "
-                + "  /system/bin/uinput " + file + " >/dev/null 2>&1; RESULT=$?; "
-                + "  rm -f " + file + "; "
-                + "  if [ \"$RESULT\" != \"0\" ]; then input keyboard -d " + TARGET_DISPLAY_ID + " keyevent " + androidCode + "; fi; "
-                + "  test \"$RESULT\" = \"0\"; ";
+    private static String uinputKeyCommand(int linuxCode, int androidCode) {
+        String events = "{\"id\":\"1\",\"command\":\"inject\",\"events\":[\"1\",\"" + linuxCode + "\",\"1\",\"0\",\"0\",\"0\"]}\n"
+                + "{\"id\":\"1\",\"command\":\"delay\",\"duration\":\"70\"}\n"
+                + "{\"id\":\"1\",\"command\":\"inject\",\"events\":[\"1\",\"" + linuxCode + "\",\"0\",\"0\",\"0\",\"0\"]}\n";
+        return ensureUinputKeyboardCommand()
+                + "  if [ \"$WTMAP_UINPUT_READY\" = \"1\" ]; then "
+                + "    printf '%s' " + shQuote(events) + " >&9; "
+                + "  else "
+                + "    input keyboard -d " + TARGET_DISPLAY_ID + " keyevent " + androidCode + "; "
+                + "  fi; ";
+    }
+
+    private static String ensureUinputKeyboardCommand() {
+        String register = "{\"id\":\"1\",\"command\":\"register\",\"name\":\"WTmap Virtual Keyboard\","
+                + "\"vid\":\"0x18d2\",\"pid\":\"0x2c42\",\"bus\":\"USB\","
+                + "\"configuration\":["
+                + "{\"type\":\"0x40045564\",\"data\":[\"1\"]},"
+                + "{\"type\":\"0x40045565\",\"data\":["
+                + "\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\",\"10\",\"11\","
+                + "\"15\",\"16\",\"17\",\"18\",\"19\",\"20\",\"21\",\"22\",\"23\",\"24\",\"25\","
+                + "\"28\",\"29\",\"30\",\"31\",\"32\",\"33\",\"34\",\"35\",\"36\",\"37\",\"38\","
+                + "\"42\",\"44\",\"45\",\"46\",\"47\",\"48\",\"49\",\"50\",\"56\",\"57\","
+                + "\"103\",\"105\",\"106\",\"108\""
+                + "]}]}\n"
+                + "{\"id\":\"1\",\"command\":\"delay\",\"duration\":\"350\"}\n";
+        return "  if [ -z \"$WTMAP_UINPUT_PID\" ] || ! kill -0 \"$WTMAP_UINPUT_PID\" 2>/dev/null; then "
+                + "    WTMAP_UINPUT_FIFO=/data/local/tmp/wtmap_uinput_fifo; "
+                + "    if [ -f /data/local/tmp/wtmap_uinput.pid ]; then OLD=$(cat /data/local/tmp/wtmap_uinput.pid 2>/dev/null); kill \"$OLD\" 2>/dev/null; fi; "
+                + "    rm -f \"$WTMAP_UINPUT_FIFO\"; mkfifo \"$WTMAP_UINPUT_FIFO\"; "
+                + "    exec 9<>\"$WTMAP_UINPUT_FIFO\"; "
+                + "    /system/bin/uinput \"$WTMAP_UINPUT_FIFO\" >/dev/null 2>&1 & "
+                + "    WTMAP_UINPUT_PID=$!; echo \"$WTMAP_UINPUT_PID\" > /data/local/tmp/wtmap_uinput.pid; "
+                + "    WTMAP_UINPUT_READY=1; "
+                + "    printf '%s' " + shQuote(register) + " >&9; "
+                + "  fi; ";
     }
 
     private static final class RootShell {

@@ -354,27 +354,6 @@ public final class MainActivity extends Activity {
         statusParams.setMargins(dp(8), 0, 0, 0);
         topBar.addView(connectionText, statusParams);
 
-        actionMenuToggleButton = new TextView(this);
-        actionMenuToggleButton.setText("\u6309\u94ae");
-        actionMenuToggleButton.setTextSize(15);
-        actionMenuToggleButton.setTextColor(Color.WHITE);
-        actionMenuToggleButton.setGravity(Gravity.CENTER);
-        actionMenuToggleButton.setBackgroundColor(Color.rgb(34, 42, 50));
-        actionMenuToggleButton.setOnClickListener(v -> setActionButtonsCollapsed(!actionButtonsCollapsed));
-        LinearLayout.LayoutParams actionToggleParams = new LinearLayout.LayoutParams(dp(70), dp(44));
-        actionToggleParams.setMargins(dp(8), 0, 0, 0);
-        topBar.addView(actionMenuToggleButton, actionToggleParams);
-
-        actionButtonsBar = new LinearLayout(this);
-        actionButtonsBar.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams actionBarParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        actionBarParams.setMargins(dp(6), 0, 0, 0);
-        topBar.addView(actionButtonsBar, actionBarParams);
-        rebuildActionButtonsBar();
-
         contentPanel = new LinearLayout(this);
         contentPanel.setOrientation(LinearLayout.HORIZONTAL);
         root.addView(contentPanel, new LinearLayout.LayoutParams(
@@ -443,6 +422,43 @@ public final class MainActivity extends Activity {
         flapsTile = addTile(metrics, "襟翼");
         gearTile = addTile(metrics, "起落架");
         airbrakeTile = addTile(metrics, "减速板");
+
+        HorizontalScrollView bottomActionScroll = new HorizontalScrollView(this);
+        bottomActionScroll.setHorizontalScrollBarEnabled(false);
+        bottomActionScroll.setFillViewport(true);
+        bottomActionScroll.setBackgroundColor(Color.rgb(18, 23, 28));
+        root.addView(bottomActionScroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
+
+        LinearLayout bottomActionBar = new LinearLayout(this);
+        bottomActionBar.setGravity(Gravity.CENTER_VERTICAL);
+        bottomActionBar.setPadding(dp(8), dp(6), dp(10), dp(6));
+        bottomActionScroll.addView(bottomActionBar, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
+
+        actionMenuToggleButton = new TextView(this);
+        actionMenuToggleButton.setText("\u6309\u94ae>");
+        actionMenuToggleButton.setTextSize(15);
+        actionMenuToggleButton.setTextColor(Color.WHITE);
+        actionMenuToggleButton.setGravity(Gravity.CENTER);
+        actionMenuToggleButton.setBackgroundColor(Color.rgb(34, 42, 50));
+        actionMenuToggleButton.setOnClickListener(v -> setActionButtonsCollapsed(!actionButtonsCollapsed));
+        bottomActionBar.addView(actionMenuToggleButton, new LinearLayout.LayoutParams(dp(76), dp(44)));
+
+        actionButtonsBar = new LinearLayout(this);
+        actionButtonsBar.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams actionBarParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        actionBarParams.setMargins(dp(6), 0, 0, 0);
+        bottomActionBar.addView(actionButtonsBar, actionBarParams);
+        rebuildActionButtonsBar();
+
         buildSettingsPage(appRoot);
     }
 

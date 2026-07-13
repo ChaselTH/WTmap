@@ -143,13 +143,18 @@ Git may not be on PATH in PowerShell; this path worked on the development PC:
 - For mapped buttons:
   - WTmap first searches `/dev/input/event6` and then `/dev/input/event*` for the real Linux key label.
   - If a device declares the key, WTmap sends EV_KEY with `sendevent`.
-  - If the key is missing, WTmap falls back to Android's system `/system/bin/uinput` helper and creates a short-lived virtual keyboard. This is needed for mappings such as 起落架=`G`.
+  - If the key is missing, WTmap falls back to Android's system `/system/bin/uinput` helper and keeps a WTmap virtual keyboard alive through a FIFO in the root shell. This is needed for mappings such as 起落架=`G`; creating a brand-new virtual keyboard on every tap was too unreliable for Wine/game input.
 - `/system/bin/uinput` is a shell wrapper around `/system/framework/uinput.jar` and accepts newline-separated JSON commands: `register`, `delay`, and `inject`.
+- Thor's `/system/bin/uinput` expects numeric strings in JSON, not symbolic names:
+  - `bus`: `USB`
+  - `configuration` type examples: `0x40045564` for `UI_SET_EVBIT`, `0x40045565` for `UI_SET_KEYBIT`
+  - event triplets use numbers such as `EV_KEY=1`, `EV_SYN=0`, `KEY_G=34`
 
 ## UI / button mapping notes
 
 - The top IP input and connect button collapse after connection. The small left `>` control expands them again.
-- Top action buttons are inside a collapsible menu labelled `按钮>` / `按钮<`; keep this menu so the first row does not become unusably crowded.
+- Action buttons live in a bottom operation strip, not the top connection row.
+- The bottom-left menu is labelled `按钮>` / `按钮<`; keep this menu so the button list can expand into the full bottom strip without crowding the top row.
 - Settings is a full page, not an `AlertDialog`.
 - Settings page layout:
   - top-left back button saves and returns;
