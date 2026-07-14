@@ -49,7 +49,7 @@ adb shell am start --display 4 -n com.codex.thorwarthunder/.MainActivity
 - 注意 Android 进程可能在 Activity 销毁后继续存在；`RootInputBridge` 的输入 executor 必须可重建，不能只用一次性 `shutdownNow()` 后的静态 executor。
 - 为减少 Magisk “已授予超级权限”提示，WTmap 启动时会预热并复用 root 输入 shell；Activity 销毁时不要主动关闭 `RootInputBridge`，避免下次按钮点击重新申请 root。
 - 当前镜像方案不是截图轮询：使用 root `MirrorRootService` 创建镜像 surface，WTmap 里用 `TextureView` 承载，触摸通过 root 注入到上屏。
-- 瞄准镜像触控优化：root 镜像服务已升级到 `wtmap_mirror_v7`。上屏游戏运行在模拟器/容器里，实际需要鼠标拖动；因此下屏拖动不再只走 Android `SOURCE_TOUCHSCREEN`/`SOURCE_MOUSE` 抽象事件，而是优先由 root 服务直接写 Thor 的 `ODIN Station Virtual Mouse`（通常 `/dev/input/event10`）：左键按下、相对移动、左键松开。v7 会同时写常规 `REL_X/REL_Y` 和 Odin 设备声明的 `REL_RX/REL_RY`，MOVE 仍然 one-way Binder 发送并节流到约 60fps。
+- 瞄准镜像触控优化：root 镜像服务已升级到 `wtmap_mirror_v8`。上屏游戏运行在模拟器/容器里，实际需要鼠标拖动。v8 优先通过 Android `InputManager` 向 display 0 注入 `SOURCE_MOUSE` 的 `ACTION_BUTTON_PRESS / ACTION_MOVE / ACTION_BUTTON_RELEASE`，并设置主键状态；如果失败，再 fallback 到直接写 Thor 的 `ODIN Station Virtual Mouse`（通常 `/dev/input/event10`）。MOVE 仍然 one-way Binder 发送并节流到约 60fps。
 - 飞机模式地图靠左上，右侧显示更清晰的飞行参数面板。
 - 去掉速度、高度、马赫等游戏里已经能直接看的参数，保留更适合下屏参考的数据。
 - 图标 fallback 做了修正，避免部分 8111 字符显示成裸字母/数字。

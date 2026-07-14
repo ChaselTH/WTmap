@@ -35,6 +35,7 @@ public final class MirrorRootService {
     private static final int REL_RY = 4;
     private static final int BTN_MOUSE = 272;
     private static Method setDisplayIdMethod;
+    private static Method setActionButtonMethod;
     private static Object inputManagerInstance;
     private static Method injectInputEventMethod;
 
@@ -42,7 +43,7 @@ public final class MirrorRootService {
     }
 
     public static void main(String[] args) {
-        String serviceName = args.length > 0 ? args[0] : "wtmap_mirror_v7";
+        String serviceName = args.length > 0 ? args[0] : "wtmap_mirror_v8";
         try {
             Looper.prepare();
             addService(serviceName, new MirrorBinder());
@@ -212,6 +213,12 @@ public final class MirrorRootService {
 
         private String injectTouch(int action, int x, int y) {
             try {
+                String displayMouseError = injectDisplayMouseDrag(action, x, y);
+                if (displayMouseError == null) {
+                    return null;
+                }
+                Log.w(TAG, "Display mouse inject failed, falling back: " + displayMouseError);
+
                 String mouseError = injectOdinMouseDrag(action, x, y);
                 if (mouseError == null) {
                     return null;
@@ -268,6 +275,79 @@ public final class MirrorRootService {
                 }
             } catch (Throwable t) {
                 Log.w(TAG, "Touch inject failed: " + shortError(t), t);
+                return shortError(t);
+            }
+        }
+
+        private String injectDisplayMouseDrag(int action, int x, int y) {
+            try {
+                long now = SystemClock.uptimeMillis();
+                int mappedAction;
+                int buttonState;
+                int actionButton = MotionEvent.BUTTON_PRIMARY;
+                if (action == MotionEvent.ACTION_DOWN) {
+                    touchDownTimeMs = now;
+                    mappedAction = MotionEvent.ACTION_BUTTON_PRESS;
+                    buttonState = MotionEvent.BUTTON_PRIMARY;
+                } else if (action == MotionEvent.ACTION_MOVE) {
+                    if (touchDownTimeMs == 0L) {
+                        touchDownTimeMs = now;
+                    }
+                    mappedAction = MotionEvent.ACTION_MOVE;
+                    buttonState = MotionEvent.BUTTON_PRIMARY;
+                } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    if (touchDownTimeMs == 0L) {
+                        touchDownTimeMs = now;
+                    }
+                    mappedAction = MotionEvent.ACTION_BUTTON_RELEASE;
+                    buttonState = 0;
+                } else {
+                    return null;
+                }
+
+                float pressure = buttonState == 0 ? 0f : 1f;
+                MotionEvent.PointerProperties[] properties = new MotionEvent.PointerProperties[1];
+                properties[0] = new MotionEvent.PointerProperties();
+                properties[0].id = 0;
+                properties[0].toolType = MotionEvent.TOOL_TYPE_MOUSE;
+
+                MotionEvent.PointerCoords[] coords = new MotionEvent.PointerCoords[1];
+                coords[0] = new MotionEvent.PointerCoords();
+                coords[0].x = x;
+                coords[0].y = y;
+                coords[0].pressure = pressure;
+                coords[0].size = 1.0f;
+
+                MotionEvent event = MotionEvent.obtain(
+                        touchDownTimeMs,
+                        now,
+                        mappedAction,
+                        1,
+                        properties,
+                        coords,
+                        0,
+                        buttonState,
+                        1.0f,
+                        1.0f,
+                        0,
+                        0,
+                        InputDevice.SOURCE_MOUSE,
+                        0
+                );
+                try {
+                    setActionButton(event, actionButton);
+                    setDisplayId(event, 0);
+                    if (!injectInputEvent(event)) {
+                        return "injectInputEvent returned false";
+                    }
+                    return null;
+                } finally {
+                    event.recycle();
+                    if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                        touchDownTimeMs = 0L;
+                    }
+                }
+            } catch (Throwable t) {
                 return shortError(t);
             }
         }
@@ -409,6 +489,17 @@ public final class MirrorRootService {
             setDisplayIdMethod.setAccessible(true);
         }
         setDisplayIdMethod.invoke(event, displayId);
+    }
+
+    private static void setActionButton(MotionEvent event, int button) {
+        try {
+            if (setActionButtonMethod == null) {
+                setActionButtonMethod = MotionEvent.class.getDeclaredMethod("setActionButton", int.class);
+                setActionButtonMethod.setAccessible(true);
+            }
+            setActionButtonMethod.invoke(event, button);
+        } catch (Throwable ignored) {
+        }
     }
 
     private static boolean injectInputEvent(InputEvent event) throws Exception {
