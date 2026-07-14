@@ -58,6 +58,7 @@ public final class MainActivity extends Activity {
     private static final String PREF_AIM_KEY = "action_aim_key";
     private static final String PREF_GEAR_KEY = "action_gear_key";
     private static final String PREF_ACTIONS = "action_buttons_json";
+    private static final String PREF_ACTIONS_COLLAPSED = "action_buttons_collapsed";
     private static final String DEFAULT_IP = "192.168.0.224";
     private static final String DEFAULT_AIM_KEY = "Z";
     private static final String DEFAULT_GEAR_KEY = "";
@@ -128,6 +129,7 @@ public final class MainActivity extends Activity {
             aimKey = DEFAULT_AIM_KEY;
         }
         gearKey = loadKeyPreference(PREF_GEAR_KEY, DEFAULT_GEAR_KEY);
+        actionButtonsCollapsed = getPreferences(MODE_PRIVATE).getBoolean(PREF_ACTIONS_COLLAPSED, true);
         loadActionButtons();
         buildUi();
 
@@ -501,6 +503,7 @@ public final class MainActivity extends Activity {
 
     private void setActionButtonsCollapsed(boolean collapsed) {
         actionButtonsCollapsed = collapsed;
+        getPreferences(MODE_PRIVATE).edit().putBoolean(PREF_ACTIONS_COLLAPSED, collapsed).apply();
         if (actionButtonsBar != null) {
             actionButtonsBar.setVisibility(collapsed ? View.GONE : View.VISIBLE);
         }
