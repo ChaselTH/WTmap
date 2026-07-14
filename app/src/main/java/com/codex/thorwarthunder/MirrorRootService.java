@@ -29,6 +29,8 @@ public final class MirrorRootService {
     private static final int EV_KEY = 1;
     private static final int EV_REL = 2;
     private static final int SYN_REPORT = 0;
+    private static final int REL_X = 0;
+    private static final int REL_Y = 1;
     private static final int REL_RX = 3;
     private static final int REL_RY = 4;
     private static final int BTN_MOUSE = 272;
@@ -40,7 +42,7 @@ public final class MirrorRootService {
     }
 
     public static void main(String[] args) {
-        String serviceName = args.length > 0 ? args[0] : "wtmap_mirror_v6";
+        String serviceName = args.length > 0 ? args[0] : "wtmap_mirror_v7";
         try {
             Looper.prepare();
             addService(serviceName, new MirrorBinder());
@@ -288,8 +290,8 @@ public final class MirrorRootService {
                 }
 
                 if (action == MotionEvent.ACTION_MOVE) {
-                    int dx = x - lastMouseX;
-                    int dy = y - lastMouseY;
+                    int dx = clampMouseDelta(x - lastMouseX);
+                    int dy = clampMouseDelta(y - lastMouseY);
                     lastMouseX = x;
                     lastMouseY = y;
                     if (!mouseButtonDown) {
@@ -297,9 +299,11 @@ public final class MirrorRootService {
                         writeInputEvent(mouseOutput, EV_KEY, BTN_MOUSE, 1);
                     }
                     if (dx != 0) {
+                        writeInputEvent(mouseOutput, EV_REL, REL_X, dx);
                         writeInputEvent(mouseOutput, EV_REL, REL_RX, dx);
                     }
                     if (dy != 0) {
+                        writeInputEvent(mouseOutput, EV_REL, REL_Y, dy);
                         writeInputEvent(mouseOutput, EV_REL, REL_RY, dy);
                     }
                     writeInputEvent(mouseOutput, EV_SYN, SYN_REPORT, 0);
@@ -345,6 +349,10 @@ public final class MirrorRootService {
             }
             mouseButtonDown = false;
         }
+    }
+
+    private static int clampMouseDelta(int value) {
+        return Math.max(-240, Math.min(240, value));
     }
 
     private static String findInputDeviceByName(String expectedName) {
