@@ -441,13 +441,13 @@ public final class MainActivity extends Activity {
         ));
 
         actionMenuToggleButton = new TextView(this);
-        actionMenuToggleButton.setText("\u6309\u94ae>");
+        actionMenuToggleButton.setText(">");
         actionMenuToggleButton.setTextSize(15);
         actionMenuToggleButton.setTextColor(Color.WHITE);
         actionMenuToggleButton.setGravity(Gravity.CENTER);
         actionMenuToggleButton.setBackgroundColor(Color.rgb(34, 42, 50));
         actionMenuToggleButton.setOnClickListener(v -> setActionButtonsCollapsed(!actionButtonsCollapsed));
-        bottomActionBar.addView(actionMenuToggleButton, new LinearLayout.LayoutParams(dp(76), dp(44)));
+        bottomActionBar.addView(actionMenuToggleButton, new LinearLayout.LayoutParams(dp(34), dp(44)));
 
         actionButtonsBar = new LinearLayout(this);
         actionButtonsBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -505,7 +505,7 @@ public final class MainActivity extends Activity {
             actionButtonsBar.setVisibility(collapsed ? View.GONE : View.VISIBLE);
         }
         if (actionMenuToggleButton != null) {
-            actionMenuToggleButton.setText(collapsed ? "\u6309\u94ae>" : "\u6309\u94ae<");
+            actionMenuToggleButton.setText(">");
         }
     }
 
@@ -545,6 +545,7 @@ public final class MainActivity extends Activity {
     }
 
     private void triggerAction(ActionButton action) {
+        boolean keepExpanded = !actionButtonsCollapsed;
         hideSoftKeyboard();
         if (action.isAim()) {
             String normalized = RootInputBridge.normalizeKeyName(action.key);
@@ -552,10 +553,16 @@ public final class MainActivity extends Activity {
                 RootInputBridge.sendKey(normalized);
             }
             setAimMode(!aimModeActive);
+            if (keepExpanded) {
+                setActionButtonsCollapsed(false);
+            }
             mainHandler.postDelayed(this::hideSoftKeyboard, 120L);
             return;
         }
         triggerMappedKey(action.key, action.name, true);
+        if (keepExpanded) {
+            setActionButtonsCollapsed(false);
+        }
     }
 
     private void setAimMode(boolean enabled) {

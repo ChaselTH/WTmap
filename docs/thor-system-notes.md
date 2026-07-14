@@ -155,7 +155,8 @@ Git may not be on PATH in PowerShell; this path worked on the development PC:
 
 - The top IP input and connect button collapse after connection. The small left `>` control expands them again.
 - Action buttons live in a bottom operation strip, not the top connection row.
-- The bottom-left menu is labelled `按钮>` / `按钮<`; keep this menu so the button list can expand into the full bottom strip without crowding the top row.
+- The bottom-left menu is a small `>` control, matching the IP expand control. Keep it compact so the button list can expand into the full bottom strip without crowding the top row.
+- Tapping action buttons while the bottom button strip is expanded should not collapse the strip; preserve the expanded state across button actions and mirror-mode UI rebuilds.
 - Settings is a full page, not an `AlertDialog`.
 - Settings page layout:
   - top-left back button saves and returns;
