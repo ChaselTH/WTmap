@@ -49,7 +49,7 @@ adb shell am start --display 4 -n com.codex.thorwarthunder/.MainActivity
 - 注意 Android 进程可能在 Activity 销毁后继续存在；`RootInputBridge` 的输入 executor 必须可重建，不能只用一次性 `shutdownNow()` 后的静态 executor。
 - 为减少 Magisk “已授予超级权限”提示，WTmap 启动时会预热并复用 root 输入 shell；Activity 销毁时不要主动关闭 `RootInputBridge`，避免下次按钮点击重新申请 root。
 - 当前镜像方案不是截图轮询：使用 root `MirrorRootService` 创建镜像 surface，WTmap 里用 `TextureView` 承载，触摸通过 root 注入到上屏。
-- 瞄准镜像触控优化：root 镜像服务已升级到 `wtmap_mirror_v4`，下屏 MOVE 触控用 one-way Binder 异步发送，root 服务缓存 InputManager 反射对象，并把 MOVE 节流到约 60fps，避免拖动时主线程等待 root 回包。
+- 瞄准镜像触控优化：root 镜像服务已升级到 `wtmap_mirror_v5`，下屏 MOVE 触控用 one-way Binder 异步发送，root 服务缓存 InputManager 反射对象，并把 MOVE 节流到约 60fps。触控注入按上屏模拟器使用场景改为 `SOURCE_MOUSE` + 左键按住/拖动/松开，而不是普通 touchscreen。
 - 飞机模式地图靠左上，右侧显示更清晰的飞行参数面板。
 - 去掉速度、高度、马赫等游戏里已经能直接看的参数，保留更适合下屏参考的数据。
 - 图标 fallback 做了修正，避免部分 8111 字符显示成裸字母/数字。

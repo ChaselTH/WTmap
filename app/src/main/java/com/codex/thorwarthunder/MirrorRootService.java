@@ -29,7 +29,7 @@ public final class MirrorRootService {
     }
 
     public static void main(String[] args) {
-        String serviceName = args.length > 0 ? args[0] : "wtmap_mirror_v4";
+        String serviceName = args.length > 0 ? args[0] : "wtmap_mirror_v5";
         try {
             Looper.prepare();
             addService(serviceName, new MirrorBinder());
@@ -199,23 +199,38 @@ public final class MirrorRootService {
                     touchDownTimeMs = now;
                 }
 
-                float pressure = (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) ? 0f : 1f;
+                int mappedAction = action == MotionEvent.ACTION_CANCEL ? MotionEvent.ACTION_UP : action;
+                int buttonState = mappedAction == MotionEvent.ACTION_UP ? 0 : MotionEvent.BUTTON_PRIMARY;
+                float pressure = mappedAction == MotionEvent.ACTION_UP ? 0f : 1f;
+                MotionEvent.PointerProperties[] properties = new MotionEvent.PointerProperties[1];
+                properties[0] = new MotionEvent.PointerProperties();
+                properties[0].id = 0;
+                properties[0].toolType = MotionEvent.TOOL_TYPE_MOUSE;
+
+                MotionEvent.PointerCoords[] coords = new MotionEvent.PointerCoords[1];
+                coords[0] = new MotionEvent.PointerCoords();
+                coords[0].x = x;
+                coords[0].y = y;
+                coords[0].pressure = pressure;
+                coords[0].size = 1.0f;
+
                 MotionEvent event = MotionEvent.obtain(
                         touchDownTimeMs,
                         now,
-                        action,
-                        x,
-                        y,
-                        pressure,
+                        mappedAction,
+                        1,
+                        properties,
+                        coords,
+                        0,
+                        buttonState,
+                        1.0f,
                         1.0f,
                         0,
-                        1.0f,
-                        1.0f,
                         0,
+                        InputDevice.SOURCE_MOUSE,
                         0
                 );
                 try {
-                    event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
                     setDisplayId(event, 0);
                     if (!injectInputEvent(event)) {
                         return "injectInputEvent returned false";
