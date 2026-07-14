@@ -69,6 +69,11 @@ Current safe mirror direction used by WTmap:
 - Only the content area below the top bar becomes the upper-screen mirror.
 - The current implementation uses a root-side `MirrorRootService` and an in-app `TextureView`, so the mirror is inside WTmap's own window instead of replacing the whole lower display.
 - Lower-screen touch events inside the mirrored content area are translated and injected into upper logical display `0`.
+- Mirror touch performance notes:
+  - Root mirror service name is currently `wtmap_mirror_v4`; bump this name when root service behavior changes so old `app_process` helpers do not keep serving stale code after APK reinstall.
+  - Touch injection uses one-way Binder transactions for `MOVE`/touch events so the lower-screen UI thread does not wait for a root-service reply on every drag sample.
+  - The root service caches reflective `InputManager`/`InputEvent.setDisplayId` lookups; doing reflection on every move caused drag stutter.
+  - MOVE events are throttled to about 60fps (`16ms`) to avoid injecting a backlog during fast drags.
 
 Better future directions:
 

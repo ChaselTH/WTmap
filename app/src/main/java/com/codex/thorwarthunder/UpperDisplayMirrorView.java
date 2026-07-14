@@ -17,7 +17,7 @@ final class UpperDisplayMirrorView extends FrameLayout implements TextureView.Su
     private static final String TAG = "WTmapMirror";
     private static final int PRIMARY_WIDTH = 1920;
     private static final int PRIMARY_HEIGHT = 1080;
-    private static final long MOVE_INTERVAL_MS = 8L;
+    private static final long MOVE_INTERVAL_MS = 16L;
 
     private final TextureView textureView;
     private final TextView statusView;

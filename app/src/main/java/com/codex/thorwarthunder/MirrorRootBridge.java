@@ -13,13 +13,15 @@ import java.lang.reflect.Method;
 final class MirrorRootBridge {
     private static final String TAG = "WTmapMirror";
     private static final String DESCRIPTOR = "com.codex.thorwarthunder.MIRROR_ROOT";
-    private static final String SERVICE_NAME = "wtmap_mirror_v3";
+    private static final String SERVICE_NAME = "wtmap_mirror_v4";
     private static final int TRANSACTION_START = IBinder.FIRST_CALL_TRANSACTION;
     private static final int TRANSACTION_STOP = IBinder.FIRST_CALL_TRANSACTION + 1;
     private static final int TRANSACTION_TOUCH = IBinder.FIRST_CALL_TRANSACTION + 2;
     private static final long SERVICE_WAIT_MS = 1200L;
 
     private static Process rootProcess;
+    private static IBinder cachedService;
+    private static Method getServiceMethod;
     private static long lastStartAttemptMs;
 
     private MirrorRootBridge() {
@@ -84,25 +86,18 @@ final class MirrorRootBridge {
         }
 
         Parcel data = Parcel.obtain();
-        Parcel reply = Parcel.obtain();
         try {
             data.writeInterfaceToken(DESCRIPTOR);
             data.writeInt(action);
             data.writeInt(x);
             data.writeInt(y);
-            service.transact(TRANSACTION_TOUCH, data, reply, 0);
-            reply.readException();
-            String error = reply.readString();
-            if (error == null || error.length() == 0) {
-                return true;
-            }
-            Log.w(TAG, "Root touch inject unavailable: " + error);
-            return false;
+            service.transact(TRANSACTION_TOUCH, data, null, IBinder.FLAG_ONEWAY);
+            return true;
         } catch (Throwable t) {
+            cachedService = null;
             Log.w(TAG, "Root touch inject failed: " + shortError(t), t);
             return false;
         } finally {
-            reply.recycle();
             data.recycle();
         }
     }
@@ -147,11 +142,18 @@ final class MirrorRootBridge {
 
     private static IBinder getService() {
         try {
+            if (cachedService != null && cachedService.isBinderAlive()) {
+                return cachedService;
+            }
             Class<?> cls = Class.forName("android.os.ServiceManager");
-            Method method = cls.getDeclaredMethod("getService", String.class);
-            method.setAccessible(true);
-            return (IBinder) method.invoke(null, SERVICE_NAME);
+            if (getServiceMethod == null) {
+                getServiceMethod = cls.getDeclaredMethod("getService", String.class);
+                getServiceMethod.setAccessible(true);
+            }
+            cachedService = (IBinder) getServiceMethod.invoke(null, SERVICE_NAME);
+            return cachedService;
         } catch (Throwable t) {
+            cachedService = null;
             Log.w(TAG, "ServiceManager.getService failed: " + shortError(t), t);
             return null;
         }

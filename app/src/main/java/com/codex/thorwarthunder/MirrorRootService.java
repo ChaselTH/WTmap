@@ -21,12 +21,15 @@ public final class MirrorRootService {
     private static final int TRANSACTION_STOP = IBinder.FIRST_CALL_TRANSACTION + 1;
     private static final int TRANSACTION_TOUCH = IBinder.FIRST_CALL_TRANSACTION + 2;
     private static final int PRIMARY_LAYER_STACK = 0;
+    private static Method setDisplayIdMethod;
+    private static Object inputManagerInstance;
+    private static Method injectInputEventMethod;
 
     private MirrorRootService() {
     }
 
     public static void main(String[] args) {
-        String serviceName = args.length > 0 ? args[0] : "wtmap_mirror_v3";
+        String serviceName = args.length > 0 ? args[0] : "wtmap_mirror_v4";
         try {
             Looper.prepare();
             addService(serviceName, new MirrorBinder());
@@ -75,8 +78,12 @@ public final class MirrorRootService {
                     int x = data.readInt();
                     int y = data.readInt();
                     String error = injectTouch(action, x, y);
-                    reply.writeNoException();
-                    reply.writeString(error);
+                    if (reply != null) {
+                        reply.writeNoException();
+                        reply.writeString(error);
+                    } else if (error != null && error.length() > 0) {
+                        Log.w(TAG, "Async touch inject failed: " + error);
+                    }
                     return true;
                 }
             } catch (Throwable t) {
@@ -246,19 +253,23 @@ public final class MirrorRootService {
     }
 
     private static void setDisplayId(InputEvent event, int displayId) throws Exception {
-        Method method = InputEvent.class.getDeclaredMethod("setDisplayId", int.class);
-        method.setAccessible(true);
-        method.invoke(event, displayId);
+        if (setDisplayIdMethod == null) {
+            setDisplayIdMethod = InputEvent.class.getDeclaredMethod("setDisplayId", int.class);
+            setDisplayIdMethod.setAccessible(true);
+        }
+        setDisplayIdMethod.invoke(event, displayId);
     }
 
     private static boolean injectInputEvent(InputEvent event) throws Exception {
-        Class<?> inputManagerClass = Class.forName("android.hardware.input.InputManager");
-        Method getInstance = inputManagerClass.getDeclaredMethod("getInstance");
-        getInstance.setAccessible(true);
-        Object inputManager = getInstance.invoke(null);
-        Method injectInputEvent = inputManagerClass.getDeclaredMethod("injectInputEvent", InputEvent.class, int.class);
-        injectInputEvent.setAccessible(true);
-        Object result = injectInputEvent.invoke(inputManager, event, 0);
+        if (inputManagerInstance == null || injectInputEventMethod == null) {
+            Class<?> inputManagerClass = Class.forName("android.hardware.input.InputManager");
+            Method getInstance = inputManagerClass.getDeclaredMethod("getInstance");
+            getInstance.setAccessible(true);
+            inputManagerInstance = getInstance.invoke(null);
+            injectInputEventMethod = inputManagerClass.getDeclaredMethod("injectInputEvent", InputEvent.class, int.class);
+            injectInputEventMethod.setAccessible(true);
+        }
+        Object result = injectInputEventMethod.invoke(inputManagerInstance, event, 0);
         return Boolean.TRUE.equals(result);
     }
 
