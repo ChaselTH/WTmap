@@ -49,7 +49,7 @@ adb shell am start --display 4 -n com.codex.thorwarthunder/.MainActivity
 - 注意 Android 进程可能在 Activity 销毁后继续存在；`RootInputBridge` 的输入 executor 必须可重建，不能只用一次性 `shutdownNow()` 后的静态 executor。
 - 为减少 Magisk “已授予超级权限”提示，WTmap 启动时会预热并复用 root 输入 shell；Activity 销毁时不要主动关闭 `RootInputBridge`，避免下次按钮点击重新申请 root。
 - 当前镜像方案不是截图轮询：使用 root `MirrorRootService` 创建镜像 surface，WTmap 里用 `TextureView` 承载，触摸通过 root 注入到上屏。
-- 瞄准镜像触控优化：root 镜像服务已升级到 `wtmap_mirror_v9`。上屏游戏运行在模拟器/容器里，实际需要鼠标拖动。v9 优先通过 Android `InputManager` 向 display 0 注入 `SOURCE_MOUSE` 的标准拖动序列 `ACTION_DOWN / ACTION_MOVE / ACTION_UP`，并设置主键状态；如果失败，再 fallback 到直接写 Thor 的 `ODIN Station Virtual Mouse`（通常 `/dev/input/event10`）。MOVE 仍然 one-way Binder 发送并节流到约 60fps。
+- 瞄准镜像触控最终方案：root 镜像服务已升级到 `wtmap_mirror_v10`。鼠标事件和 display 0 `InputManager` 注入均无法控制 Wine 内游戏，最终改为向上屏实体触摸设备 `fts_ts`（测试机为 `/dev/input/event6`）写入完整的多点触摸按下、移动、抬起序列。上屏原生触摸轴为 1080×1920，当前游戏横屏为 `ROTATION_90`，坐标换算为 `rawX=displayY`、`rawY=1919-displayX`。用户已确认下屏拖动同步控制上屏正常，当前功能完成。MOVE 仍使用 one-way Binder 并节流到约 60fps。
 - 飞机模式地图靠左上，右侧显示更清晰的飞行参数面板。
 - 去掉速度、高度、马赫等游戏里已经能直接看的参数，保留更适合下屏参考的数据。
 - 图标 fallback 做了修正，避免部分 8111 字符显示成裸字母/数字。
@@ -74,3 +74,10 @@ adb install -r 'D:\Codex_project\ayn_thor\WTmap\build\outputs\apk\debug\thor-wt-
 ```
 
 如果从另一个电脑 clone 项目，优先使用仓库内的构建脚本或 Android Studio 打开 `WTmap` 项目根目录。
+
+## Release 签名
+
+- `v0.1.0` 发布 APK 使用本机仓库忽略目录中的 `.tools/debug.keystore` 签名，以便直接覆盖用户当前 Thor 上已安装的测试版本。
+- 签名证书 SHA-256：`253235a4c5223f6abe22a3bdd1b9ebe71823dec67558841734bab3bbdfb9c0c2`。
+- APK SHA-256：`17224426517db6016912d687637159bb65ac32a498227672a6c103740c99c829`。
+- 后续 Release 必须继续使用同一 keystore，否则 Android 无法覆盖升级。keystore 属于私钥，不要提交到公开 Git 仓库；应由仓库所有者另行安全备份。
