@@ -141,6 +141,7 @@ Git may not be on PATH in PowerShell; this path worked on the development PC:
 - Root input can trigger Magisk grant toasts depending on Magisk settings. Avoid adding more root calls on every frame/touch.
 - Thor's physical input device `/dev/input/event6` declares only some keyboard keys. In one observed state it had keys such as `W/E/U/O/S/L/Z/C/V/M/arrow keys`, but not `G`.
 - For mapped buttons:
+  - Button mappings are generic, not hard-coded per action. Current key normalization supports A-Z, 0-9, `SPACE`, `ENTER`, `ESC`, `TAB`, `SHIFT`, `CTRL`, `ALT`, arrow keys, and `F1`-`F12`.
   - WTmap first searches `/dev/input/event6` and then `/dev/input/event*` for the real Linux key label.
   - If a device declares the key, WTmap sends EV_KEY with `sendevent`.
   - If the key is missing, WTmap falls back to Android's system `/system/bin/uinput` helper and keeps a WTmap virtual keyboard alive through a FIFO in the root shell. This is needed for mappings such as 起落架=`G`; creating a brand-new virtual keyboard on every tap was too unreliable for Wine/game input.
@@ -163,6 +164,7 @@ Git may not be on PATH in PowerShell; this path worked on the development PC:
 - Button names are user-editable and must sync back to the top action buttons after returning from settings.
 - `瞄准` is special because it toggles mirror mode; do not delete it unless a replacement mirror entry exists.
 - Custom buttons are normal key-sending actions.
+- Android may keep the WTmap process around after the Activity is destroyed. Static executors in input helpers must tolerate restart/reopen; otherwise a later button tap can crash with `RejectedExecutionException` from a terminated executor.
 
 ## Icon / map rendering decisions already made
 

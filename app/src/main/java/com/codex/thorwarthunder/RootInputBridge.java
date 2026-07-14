@@ -11,14 +11,21 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 final class RootInputBridge {
     private static final String TAG = "WTmapInput";
     static final int TARGET_DISPLAY_ID = 0;
+    private static final String[] SPECIAL_KEYS = {
+            "SPACE", "ENTER", "ESC", "TAB", "SHIFT", "CTRL", "ALT",
+            "UP", "DOWN", "LEFT", "RIGHT",
+            "F1", "F2", "F3", "F4", "F5", "F6",
+            "F7", "F8", "F9", "F10", "F11", "F12"
+    };
 
-    private static final ExecutorService INPUT_EXECUTOR = Executors.newSingleThreadExecutor();
     private static final RootShell INPUT_SHELL = new RootShell("wtmap-input-root");
+    private static ExecutorService inputExecutor = Executors.newSingleThreadExecutor();
 
     private RootInputBridge() {
     }
@@ -42,7 +49,7 @@ final class RootInputBridge {
         // Android keyevent is accepted by the shell but Wine can ignore it because the event has
         // no real evdev scan code. Thor's upper touch/input device exposes KEY_Z, so prefer a
         // low-level EV_KEY press. If the built-in device does not expose the key (for example G),
-        // create a short-lived uinput keyboard instead of falling back to Android keyevent.
+        // fall back to a persistent uinput virtual keyboard instead of Android keyevent.
         String linuxLabel = linuxKeyLabel(normalizedKey);
         String command =
                 "DEV=/dev/input/event6; FOUND=0; " +
@@ -73,6 +80,9 @@ final class RootInputBridge {
             return null;
         }
         String key = keyName.trim().toUpperCase(Locale.US);
+        if (key.startsWith("KEY_")) {
+            key = key.substring(4);
+        }
         if (key.length() == 1) {
             char c = key.charAt(0);
             if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
@@ -110,6 +120,15 @@ final class RootInputBridge {
             case "ALT":
                 return key;
             default:
+                if (key.startsWith("F")) {
+                    try {
+                        int number = Integer.parseInt(key.substring(1));
+                        if (number >= 1 && number <= 12) {
+                            return key;
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
                 return null;
         }
     }
@@ -131,10 +150,17 @@ final class RootInputBridge {
     }
 
     static void runAsync(String command, String label) {
-        INPUT_EXECUTOR.execute(() -> {
+        Runnable task = () -> {
             boolean ok = INPUT_SHELL.run(command, 2500L);
             Log.i(TAG, label + " -> " + (ok ? "ok" : "failed"));
-        });
+        };
+        try {
+            ensureExecutor().execute(task);
+        } catch (RejectedExecutionException rejected) {
+            Log.w(TAG, "input executor was stopped; restarting", rejected);
+            restartExecutor();
+            ensureExecutor().execute(task);
+        }
     }
 
     static String shQuote(String value) {
@@ -142,8 +168,29 @@ final class RootInputBridge {
     }
 
     static void shutdown() {
-        INPUT_EXECUTOR.shutdownNow();
+        ExecutorService executor;
+        synchronized (RootInputBridge.class) {
+            executor = inputExecutor;
+            inputExecutor = null;
+        }
+        if (executor != null) {
+            executor.shutdownNow();
+        }
         INPUT_SHELL.close();
+    }
+
+    private static synchronized ExecutorService ensureExecutor() {
+        if (inputExecutor == null || inputExecutor.isShutdown() || inputExecutor.isTerminated()) {
+            inputExecutor = Executors.newSingleThreadExecutor();
+        }
+        return inputExecutor;
+    }
+
+    private static synchronized void restartExecutor() {
+        if (inputExecutor != null) {
+            inputExecutor.shutdownNow();
+        }
+        inputExecutor = Executors.newSingleThreadExecutor();
     }
 
     private static int androidKeyCode(String key) {
@@ -179,6 +226,30 @@ final class RootInputBridge {
                 return 21;
             case "RIGHT":
                 return 22;
+            case "F1":
+                return 131;
+            case "F2":
+                return 132;
+            case "F3":
+                return 133;
+            case "F4":
+                return 134;
+            case "F5":
+                return 135;
+            case "F6":
+                return 136;
+            case "F7":
+                return 137;
+            case "F8":
+                return 138;
+            case "F9":
+                return 139;
+            case "F10":
+                return 140;
+            case "F11":
+                return 141;
+            case "F12":
+                return 142;
             default:
                 return -1;
         }
@@ -286,6 +357,30 @@ final class RootInputBridge {
                 return 105;
             case "RIGHT":
                 return 106;
+            case "F1":
+                return 59;
+            case "F2":
+                return 60;
+            case "F3":
+                return 61;
+            case "F4":
+                return 62;
+            case "F5":
+                return 63;
+            case "F6":
+                return 64;
+            case "F7":
+                return 65;
+            case "F8":
+                return 66;
+            case "F9":
+                return 67;
+            case "F10":
+                return 68;
+            case "F11":
+                return 87;
+            case "F12":
+                return 88;
             default:
                 return -1;
         }
@@ -318,6 +413,19 @@ final class RootInputBridge {
                 return "KEY_LEFT";
             case "RIGHT":
                 return "KEY_RIGHT";
+            case "F1":
+            case "F2":
+            case "F3":
+            case "F4":
+            case "F5":
+            case "F6":
+            case "F7":
+            case "F8":
+            case "F9":
+            case "F10":
+            case "F11":
+            case "F12":
+                return "KEY_" + key;
             default:
                 return "KEY_Z";
         }
@@ -340,13 +448,7 @@ final class RootInputBridge {
                 + "\"vid\":\"0x18d2\",\"pid\":\"0x2c42\",\"bus\":\"USB\","
                 + "\"configuration\":["
                 + "{\"type\":\"0x40045564\",\"data\":[\"1\"]},"
-                + "{\"type\":\"0x40045565\",\"data\":["
-                + "\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\",\"10\",\"11\","
-                + "\"15\",\"16\",\"17\",\"18\",\"19\",\"20\",\"21\",\"22\",\"23\",\"24\",\"25\","
-                + "\"28\",\"29\",\"30\",\"31\",\"32\",\"33\",\"34\",\"35\",\"36\",\"37\",\"38\","
-                + "\"42\",\"44\",\"45\",\"46\",\"47\",\"48\",\"49\",\"50\",\"56\",\"57\","
-                + "\"103\",\"105\",\"106\",\"108\""
-                + "]}]}\n"
+                + "{\"type\":\"0x40045565\",\"data\":[" + uinputRegisteredKeyCodesJson() + "]}]}\n"
                 + "{\"id\":\"1\",\"command\":\"delay\",\"duration\":\"350\"}\n";
         return "  if [ -z \"$WTMAP_UINPUT_PID\" ] || ! kill -0 \"$WTMAP_UINPUT_PID\" 2>/dev/null; then "
                 + "    WTMAP_UINPUT_FIFO=/data/local/tmp/wtmap_uinput_fifo; "
@@ -358,6 +460,32 @@ final class RootInputBridge {
                 + "    WTMAP_UINPUT_READY=1; "
                 + "    printf '%s' " + shQuote(register) + " >&9; "
                 + "  fi; ";
+    }
+
+    private static String uinputRegisteredKeyCodesJson() {
+        StringBuilder builder = new StringBuilder();
+        appendUinputCodeRange(builder, 'A', 'Z');
+        appendUinputCodeRange(builder, '0', '9');
+        for (String key : SPECIAL_KEYS) {
+            appendUinputCode(builder, linuxKeyCode(key));
+        }
+        return builder.toString();
+    }
+
+    private static void appendUinputCodeRange(StringBuilder builder, char first, char last) {
+        for (char c = first; c <= last; c++) {
+            appendUinputCode(builder, linuxKeyCode(String.valueOf(c)));
+        }
+    }
+
+    private static void appendUinputCode(StringBuilder builder, int code) {
+        if (code <= 0) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append(',');
+        }
+        builder.append('"').append(code).append('"');
     }
 
     private static final class RootShell {
