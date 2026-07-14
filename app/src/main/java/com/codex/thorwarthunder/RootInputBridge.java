@@ -145,6 +145,10 @@ final class RootInputBridge {
         runAsync(command, "touch " + action + " " + x + "," + y);
     }
 
+    static void warmUp() {
+        runAsync("true", "root warmup");
+    }
+
     static void runAsync(String command) {
         runAsync(command, command);
     }

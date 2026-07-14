@@ -132,6 +132,7 @@ public final class MainActivity extends Activity {
         actionButtonsCollapsed = getPreferences(MODE_PRIVATE).getBoolean(PREF_ACTIONS_COLLAPSED, true);
         loadActionButtons();
         buildUi();
+        RootInputBridge.warmUp();
 
         String savedIp = getPreferences(MODE_PRIVATE).getString(PREF_IP, DEFAULT_IP);
         ipInput.setText(savedIp);
@@ -147,7 +148,6 @@ public final class MainActivity extends Activity {
             mirrorView.setMirrorActive(false);
         }
         executor.shutdownNow();
-        RootInputBridge.shutdown();
         super.onDestroy();
     }
 

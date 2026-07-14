@@ -47,6 +47,7 @@ adb shell am start --display 4 -n com.codex.thorwarthunder/.MainActivity
 - 按键发送不是按按钮写死：按钮映射会归一化到通用按键表，目前支持 A-Z、0-9、SPACE、ENTER、ESC、TAB、SHIFT、CTRL、ALT、方向键、F1-F12。
 - Thor 原生上屏 input 设备不一定声明所有键，例如 `G`；WTmap 会优先用真实 evdev 设备，缺失时回退到 `/system/bin/uinput` 常驻虚拟键盘。
 - 注意 Android 进程可能在 Activity 销毁后继续存在；`RootInputBridge` 的输入 executor 必须可重建，不能只用一次性 `shutdownNow()` 后的静态 executor。
+- 为减少 Magisk “已授予超级权限”提示，WTmap 启动时会预热并复用 root 输入 shell；Activity 销毁时不要主动关闭 `RootInputBridge`，避免下次按钮点击重新申请 root。
 - 当前镜像方案不是截图轮询：使用 root `MirrorRootService` 创建镜像 surface，WTmap 里用 `TextureView` 承载，触摸通过 root 注入到上屏。
 - 飞机模式地图靠左上，右侧显示更清晰的飞行参数面板。
 - 去掉速度、高度、马赫等游戏里已经能直接看的参数，保留更适合下屏参考的数据。

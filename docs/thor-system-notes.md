@@ -166,6 +166,7 @@ Git may not be on PATH in PowerShell; this path worked on the development PC:
 - `瞄准` is special because it toggles mirror mode; do not delete it unless a replacement mirror entry exists.
 - Custom buttons are normal key-sending actions.
 - Android may keep the WTmap process around after the Activity is destroyed. Static executors in input helpers must tolerate restart/reopen; otherwise a later button tap can crash with `RejectedExecutionException` from a terminated executor.
+- Magisk superuser toasts appear when WTmap opens a new `su` session. Keep the root input shell warm and reused across button taps; do not close `RootInputBridge` from `Activity.onDestroy()`. If Magisk is configured to notify every root use, the remaining toast must be disabled in Magisk's per-app/global superuser notification settings.
 
 ## Icon / map rendering decisions already made
 
