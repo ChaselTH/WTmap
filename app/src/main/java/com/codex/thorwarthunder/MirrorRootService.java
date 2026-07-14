@@ -28,12 +28,21 @@ public final class MirrorRootService {
     private static final int EV_SYN = 0;
     private static final int EV_KEY = 1;
     private static final int EV_REL = 2;
+    private static final int EV_ABS = 3;
     private static final int SYN_REPORT = 0;
     private static final int REL_X = 0;
     private static final int REL_Y = 1;
     private static final int REL_RX = 3;
     private static final int REL_RY = 4;
     private static final int BTN_MOUSE = 272;
+    private static final int BTN_TOUCH = 330;
+    private static final int ABS_MT_SLOT = 47;
+    private static final int ABS_MT_TOUCH_MAJOR = 48;
+    private static final int ABS_MT_POSITION_X = 53;
+    private static final int ABS_MT_POSITION_Y = 54;
+    private static final int ABS_MT_TRACKING_ID = 57;
+    private static final int UPPER_TOUCH_MAX_X = 1079;
+    private static final int UPPER_TOUCH_MAX_Y = 1919;
     private static Method setDisplayIdMethod;
     private static Method setActionButtonMethod;
     private static Object inputManagerInstance;
@@ -43,7 +52,7 @@ public final class MirrorRootService {
     }
 
     public static void main(String[] args) {
-        String serviceName = args.length > 0 ? args[0] : "wtmap_mirror_v9";
+        String serviceName = args.length > 0 ? args[0] : "wtmap_mirror_v10";
         try {
             Looper.prepare();
             addService(serviceName, new MirrorBinder());
@@ -66,9 +75,12 @@ public final class MirrorRootService {
         private Surface currentSurface;
         private long touchDownTimeMs;
         private FileOutputStream mouseOutput;
+        private FileOutputStream upperTouchOutput;
         private int lastMouseX;
         private int lastMouseY;
         private boolean mouseButtonDown;
+        private boolean upperTouchDown;
+        private int upperTouchTrackingId = 1000;
 
         @Override
         protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) {
@@ -183,6 +195,7 @@ public final class MirrorRootService {
                 currentSurface = null;
             }
             closeMouseDevice();
+            closeUpperTouchDevice();
         }
 
         private void applyDisplayTransaction(Surface surface, int width, int height,
@@ -213,6 +226,12 @@ public final class MirrorRootService {
 
         private String injectTouch(int action, int x, int y) {
             try {
+                String upperTouchError = injectUpperTouchDrag(action, x, y);
+                if (upperTouchError == null) {
+                    return null;
+                }
+                Log.w(TAG, "Upper touchscreen inject failed, falling back: " + upperTouchError);
+
                 String displayMouseError = injectDisplayMouseDrag(action, x, y);
                 if (displayMouseError == null) {
                     return null;
@@ -277,6 +296,97 @@ public final class MirrorRootService {
                 Log.w(TAG, "Touch inject failed: " + shortError(t), t);
                 return shortError(t);
             }
+        }
+
+        private String injectUpperTouchDrag(int action, int displayX, int displayY) {
+            try {
+                ensureUpperTouchDevice();
+                if (upperTouchOutput == null) {
+                    return "upper touchscreen not available";
+                }
+
+                // The upper panel reports portrait-native axes (1080x1920), while the game
+                // display is ROTATION_90 landscape (1920x1080).
+                int rawX = clamp(displayY, 0, UPPER_TOUCH_MAX_X);
+                int rawY = clamp(UPPER_TOUCH_MAX_Y - displayX, 0, UPPER_TOUCH_MAX_Y);
+
+                if (action == MotionEvent.ACTION_DOWN) {
+                    upperTouchTrackingId = upperTouchTrackingId >= 32766
+                            ? 1 : upperTouchTrackingId + 1;
+                    writeInputEvent(upperTouchOutput, EV_ABS, ABS_MT_SLOT, 0);
+                    writeInputEvent(upperTouchOutput, EV_ABS, ABS_MT_TRACKING_ID, upperTouchTrackingId);
+                    writeInputEvent(upperTouchOutput, EV_ABS, ABS_MT_TOUCH_MAJOR, 5);
+                    writeInputEvent(upperTouchOutput, EV_ABS, ABS_MT_POSITION_X, rawX);
+                    writeInputEvent(upperTouchOutput, EV_ABS, ABS_MT_POSITION_Y, rawY);
+                    writeInputEvent(upperTouchOutput, EV_KEY, BTN_TOUCH, 1);
+                    writeInputEvent(upperTouchOutput, EV_SYN, SYN_REPORT, 0);
+                    upperTouchOutput.flush();
+                    upperTouchDown = true;
+                    return null;
+                }
+
+                if (action == MotionEvent.ACTION_MOVE) {
+                    if (!upperTouchDown) {
+                        return injectUpperTouchDrag(MotionEvent.ACTION_DOWN, displayX, displayY);
+                    }
+                    writeInputEvent(upperTouchOutput, EV_ABS, ABS_MT_SLOT, 0);
+                    writeInputEvent(upperTouchOutput, EV_ABS, ABS_MT_TOUCH_MAJOR, 5);
+                    writeInputEvent(upperTouchOutput, EV_ABS, ABS_MT_POSITION_X, rawX);
+                    writeInputEvent(upperTouchOutput, EV_ABS, ABS_MT_POSITION_Y, rawY);
+                    writeInputEvent(upperTouchOutput, EV_SYN, SYN_REPORT, 0);
+                    upperTouchOutput.flush();
+                    return null;
+                }
+
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    if (upperTouchDown) {
+                        writeInputEvent(upperTouchOutput, EV_ABS, ABS_MT_SLOT, 0);
+                        writeInputEvent(upperTouchOutput, EV_ABS, ABS_MT_TRACKING_ID, -1);
+                        writeInputEvent(upperTouchOutput, EV_KEY, BTN_TOUCH, 0);
+                        writeInputEvent(upperTouchOutput, EV_SYN, SYN_REPORT, 0);
+                        upperTouchOutput.flush();
+                    }
+                    upperTouchDown = false;
+                    return null;
+                }
+                return null;
+            } catch (Throwable t) {
+                closeUpperTouchDevice();
+                return shortError(t);
+            }
+        }
+
+        private void ensureUpperTouchDevice() throws Exception {
+            if (upperTouchOutput != null) {
+                return;
+            }
+            String path = findInputDeviceByName("fts_ts");
+            if (path == null) {
+                path = "/dev/input/event6";
+            }
+            upperTouchOutput = new FileOutputStream(path);
+            Log.i(TAG, "Opened upper touchscreen " + path);
+        }
+
+        private void closeUpperTouchDevice() {
+            if (upperTouchOutput != null) {
+                try {
+                    if (upperTouchDown) {
+                        writeInputEvent(upperTouchOutput, EV_ABS, ABS_MT_SLOT, 0);
+                        writeInputEvent(upperTouchOutput, EV_ABS, ABS_MT_TRACKING_ID, -1);
+                        writeInputEvent(upperTouchOutput, EV_KEY, BTN_TOUCH, 0);
+                        writeInputEvent(upperTouchOutput, EV_SYN, SYN_REPORT, 0);
+                        upperTouchOutput.flush();
+                    }
+                } catch (Throwable ignored) {
+                }
+                try {
+                    upperTouchOutput.close();
+                } catch (Throwable ignored) {
+                }
+                upperTouchOutput = null;
+            }
+            upperTouchDown = false;
         }
 
         private String injectDisplayMouseDrag(int action, int x, int y) {
@@ -433,6 +543,10 @@ public final class MirrorRootService {
 
     private static int clampMouseDelta(int value) {
         return Math.max(-240, Math.min(240, value));
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private static String findInputDeviceByName(String expectedName) {
