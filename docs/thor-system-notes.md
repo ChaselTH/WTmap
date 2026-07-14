@@ -70,14 +70,14 @@ Current safe mirror direction used by WTmap:
 - The current implementation uses a root-side `MirrorRootService` and an in-app `TextureView`, so the mirror is inside WTmap's own window instead of replacing the whole lower display.
 - Lower-screen touch events inside the mirrored content area are translated and injected into upper logical display `0`.
 - Mirror touch performance notes:
-  - Root mirror service name is currently `wtmap_mirror_v8`; bump this name when root service behavior changes so old `app_process` helpers do not keep serving stale code after APK reinstall.
+  - Root mirror service name is currently `wtmap_mirror_v9`; bump this name when root service behavior changes so old `app_process` helpers do not keep serving stale code after APK reinstall.
   - Touch injection uses one-way Binder transactions for `MOVE`/touch events so the lower-screen UI thread does not wait for a root-service reply on every drag sample.
   - The root service caches reflective `InputManager`/`InputEvent.setDisplayId` lookups; doing reflection on every move caused drag stutter.
   - MOVE events are throttled to about 60fps (`16ms`) to avoid injecting a backlog during fast drags.
   - The upper screen runs the game through an emulator/container, so lower-screen aim dragging should behave like mouse input, not Android touchscreen input.
   - Thor exposes `ODIN Station Virtual Mouse` as a relative mouse device, observed at `/dev/input/event10`, with `BTN_MOUSE`, `BTN_RIGHT`, `BTN_MIDDLE`, `REL_RX`, and `REL_RY`.
-  - v8 root service first injects `SOURCE_MOUSE` events to display `0` using Android `InputManager`: `ACTION_BUTTON_PRESS`, `ACTION_MOVE`, `ACTION_BUTTON_RELEASE`, with primary button state. This is intended to target the upper Wine/emulator window instead of moving the lower-display system pointer.
-  - If display-targeted `InputManager` mouse injection fails, v8 falls back to writing input_event structs directly to `ODIN Station Virtual Mouse`: `BTN_MOUSE` down, relative deltas, then `BTN_MOUSE` up. It writes both `REL_X`/`REL_Y` and `REL_RX`/`REL_RY`.
+  - v9 root service first injects `SOURCE_MOUSE` events to display `0` using Android `InputManager`: standard `ACTION_DOWN`, `ACTION_MOVE`, `ACTION_UP`, with primary button state. This is intended to target the upper Wine/emulator window instead of moving the lower-display system pointer.
+  - If display-targeted `InputManager` mouse injection fails, v9 falls back to writing input_event structs directly to `ODIN Station Virtual Mouse`: `BTN_MOUSE` down, relative deltas, then `BTN_MOUSE` up. It writes both `REL_X`/`REL_Y` and `REL_RX`/`REL_RY`.
 
 Better future directions:
 

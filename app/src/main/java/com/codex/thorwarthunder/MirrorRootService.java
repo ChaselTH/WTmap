@@ -43,7 +43,7 @@ public final class MirrorRootService {
     }
 
     public static void main(String[] args) {
-        String serviceName = args.length > 0 ? args[0] : "wtmap_mirror_v8";
+        String serviceName = args.length > 0 ? args[0] : "wtmap_mirror_v9";
         try {
             Looper.prepare();
             addService(serviceName, new MirrorBinder());
@@ -287,7 +287,7 @@ public final class MirrorRootService {
                 int actionButton = MotionEvent.BUTTON_PRIMARY;
                 if (action == MotionEvent.ACTION_DOWN) {
                     touchDownTimeMs = now;
-                    mappedAction = MotionEvent.ACTION_BUTTON_PRESS;
+                    mappedAction = MotionEvent.ACTION_DOWN;
                     buttonState = MotionEvent.BUTTON_PRIMARY;
                 } else if (action == MotionEvent.ACTION_MOVE) {
                     if (touchDownTimeMs == 0L) {
@@ -299,7 +299,7 @@ public final class MirrorRootService {
                     if (touchDownTimeMs == 0L) {
                         touchDownTimeMs = now;
                     }
-                    mappedAction = MotionEvent.ACTION_BUTTON_RELEASE;
+                    mappedAction = MotionEvent.ACTION_UP;
                     buttonState = 0;
                 } else {
                     return null;
