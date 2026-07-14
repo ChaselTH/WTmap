@@ -13,7 +13,7 @@ import java.lang.reflect.Method;
 final class MirrorRootBridge {
     private static final String TAG = "WTmapMirror";
     private static final String DESCRIPTOR = "com.codex.thorwarthunder.MIRROR_ROOT";
-    private static final String SERVICE_NAME = "wtmap_mirror_v5";
+    private static final String SERVICE_NAME = "wtmap_mirror_v6";
     private static final int TRANSACTION_START = IBinder.FIRST_CALL_TRANSACTION;
     private static final int TRANSACTION_STOP = IBinder.FIRST_CALL_TRANSACTION + 1;
     private static final int TRANSACTION_TOUCH = IBinder.FIRST_CALL_TRANSACTION + 2;

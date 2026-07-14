@@ -12,6 +12,10 @@ import android.view.InputEvent;
 import android.view.MotionEvent;
 import android.view.Surface;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.lang.reflect.Method;
 
 public final class MirrorRootService {
@@ -21,6 +25,13 @@ public final class MirrorRootService {
     private static final int TRANSACTION_STOP = IBinder.FIRST_CALL_TRANSACTION + 1;
     private static final int TRANSACTION_TOUCH = IBinder.FIRST_CALL_TRANSACTION + 2;
     private static final int PRIMARY_LAYER_STACK = 0;
+    private static final int EV_SYN = 0;
+    private static final int EV_KEY = 1;
+    private static final int EV_REL = 2;
+    private static final int SYN_REPORT = 0;
+    private static final int REL_RX = 3;
+    private static final int REL_RY = 4;
+    private static final int BTN_MOUSE = 272;
     private static Method setDisplayIdMethod;
     private static Object inputManagerInstance;
     private static Method injectInputEventMethod;
@@ -29,7 +40,7 @@ public final class MirrorRootService {
     }
 
     public static void main(String[] args) {
-        String serviceName = args.length > 0 ? args[0] : "wtmap_mirror_v5";
+        String serviceName = args.length > 0 ? args[0] : "wtmap_mirror_v6";
         try {
             Looper.prepare();
             addService(serviceName, new MirrorBinder());
@@ -51,6 +62,10 @@ public final class MirrorRootService {
         private IBinder displayToken;
         private Surface currentSurface;
         private long touchDownTimeMs;
+        private FileOutputStream mouseOutput;
+        private int lastMouseX;
+        private int lastMouseY;
+        private boolean mouseButtonDown;
 
         @Override
         protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) {
@@ -164,6 +179,7 @@ public final class MirrorRootService {
                 }
                 currentSurface = null;
             }
+            closeMouseDevice();
         }
 
         private void applyDisplayTransaction(Surface surface, int width, int height,
@@ -194,6 +210,12 @@ public final class MirrorRootService {
 
         private String injectTouch(int action, int x, int y) {
             try {
+                String mouseError = injectOdinMouseDrag(action, x, y);
+                if (mouseError == null) {
+                    return null;
+                }
+                Log.w(TAG, "Odin mouse inject failed, falling back: " + mouseError);
+
                 long now = SystemClock.uptimeMillis();
                 if (action == MotionEvent.ACTION_DOWN || touchDownTimeMs == 0L) {
                     touchDownTimeMs = now;
@@ -247,6 +269,112 @@ public final class MirrorRootService {
                 return shortError(t);
             }
         }
+
+        private String injectOdinMouseDrag(int action, int x, int y) {
+            try {
+                ensureMouseDevice();
+                if (mouseOutput == null) {
+                    return "mouse device not available";
+                }
+
+                if (action == MotionEvent.ACTION_DOWN) {
+                    lastMouseX = x;
+                    lastMouseY = y;
+                    mouseButtonDown = true;
+                    writeInputEvent(mouseOutput, EV_KEY, BTN_MOUSE, 1);
+                    writeInputEvent(mouseOutput, EV_SYN, SYN_REPORT, 0);
+                    mouseOutput.flush();
+                    return null;
+                }
+
+                if (action == MotionEvent.ACTION_MOVE) {
+                    int dx = x - lastMouseX;
+                    int dy = y - lastMouseY;
+                    lastMouseX = x;
+                    lastMouseY = y;
+                    if (!mouseButtonDown) {
+                        mouseButtonDown = true;
+                        writeInputEvent(mouseOutput, EV_KEY, BTN_MOUSE, 1);
+                    }
+                    if (dx != 0) {
+                        writeInputEvent(mouseOutput, EV_REL, REL_RX, dx);
+                    }
+                    if (dy != 0) {
+                        writeInputEvent(mouseOutput, EV_REL, REL_RY, dy);
+                    }
+                    writeInputEvent(mouseOutput, EV_SYN, SYN_REPORT, 0);
+                    mouseOutput.flush();
+                    return null;
+                }
+
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    if (mouseButtonDown) {
+                        writeInputEvent(mouseOutput, EV_KEY, BTN_MOUSE, 0);
+                        writeInputEvent(mouseOutput, EV_SYN, SYN_REPORT, 0);
+                        mouseOutput.flush();
+                    }
+                    mouseButtonDown = false;
+                    return null;
+                }
+                return null;
+            } catch (Throwable t) {
+                closeMouseDevice();
+                return shortError(t);
+            }
+        }
+
+        private void ensureMouseDevice() throws Exception {
+            if (mouseOutput != null) {
+                return;
+            }
+            String path = findInputDeviceByName("ODIN Station Virtual Mouse");
+            if (path == null) {
+                path = "/dev/input/event10";
+            }
+            mouseOutput = new FileOutputStream(path);
+            Log.i(TAG, "Opened mouse device " + path);
+        }
+
+        private void closeMouseDevice() {
+            if (mouseOutput != null) {
+                try {
+                    mouseOutput.close();
+                } catch (Throwable ignored) {
+                }
+                mouseOutput = null;
+            }
+            mouseButtonDown = false;
+        }
+    }
+
+    private static String findInputDeviceByName(String expectedName) {
+        File dir = new File("/dev/input");
+        File[] files = dir.listFiles();
+        if (files == null) {
+            return null;
+        }
+        for (File file : files) {
+            String namePath = "/sys/class/input/" + file.getName() + "/device/name";
+            try {
+                byte[] data = java.nio.file.Files.readAllBytes(new File(namePath).toPath());
+                String name = new String(data).trim();
+                if (expectedName.equals(name)) {
+                    return file.getAbsolutePath();
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static void writeInputEvent(FileOutputStream output, int type, int code, int value) throws Exception {
+        ByteBuffer buffer = ByteBuffer.allocate(24).order(ByteOrder.LITTLE_ENDIAN);
+        buffer.putLong(0L);
+        buffer.putLong(0L);
+        buffer.putShort((short) type);
+        buffer.putShort((short) code);
+        buffer.putInt(value);
+        output.write(buffer.array());
     }
 
     private static Rect readRect(Parcel parcel) {
